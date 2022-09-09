@@ -42,30 +42,30 @@
 
 -export([start/1]).
 
-mine_coin(Host, K) ->
+mine_coin(K) ->
     %Byte_num = rand:uniform(100),
-    Rand_string = "jonathan.bravo;" ++ binary:bin_to_list(binary:encode_hex(crypto:strong_rand_bytes(10))),
+    Rand_string = "jonathan.bravo;" ++ binary:bin_to_list(base64:encode(crypto:strong_rand_bytes(8))),
     Hash_string = erlang:integer_to_list(binary:decode_unsigned(crypto:hash(sha256, Rand_string)), 16),
-    %io:fwrite(Hash_string),
     Prefix = lists:concat(lists:duplicate(K, "0")),
     B = string:find(Hash_string, Prefix) =:= Hash_string,
     if
         B -> 
-            Host ! {Rand_string, Hash_string};
+            io:fwrite("~s\t~s~n~n", [Rand_string, Hash_string]);
+            %Host ! {Rand_string, Hash_string};
             %io:fwrite("~s~n~n",[Hash_string]);
         true ->
-            mine_coin(Host, K)
+            mine_coin(K)
     end.
 
 % will take a value K
-worker(K) ->
-    mine_coin(self(), K),
-    receive
-        {Rand_string, Hash_string} ->
-            % Host ! {Rand_string, Hash_string},
-            io:fwrite("~s    ~s~n~n", [Rand_string, Hash_string]),
-            worker(K)
-    end.
+% worker(K) ->
+%     mine_coin(self(), K),
+%     receive
+%         {Rand_string, Hash_string} ->
+%             % Host ! {Rand_string, Hash_string},
+%             io:fwrite("~s    ~s~n~n", [Rand_string, Hash_string]),
+%             worker(K)
+%     end.
 
 
 % server(K) ->
@@ -78,7 +78,8 @@ worker(K) ->
 %    end.
 
 start(K) ->
-    spawn(fun() -> worker(K) end).
+    mine_coin(K).
+    %spawn(fun() -> worker(K) end).
     % Server = spawn(fun() -> server(K) end),
     % Server ! spawn_worker.
 
