@@ -1,6 +1,6 @@
 -module(project1).
 
--export([start_worker/1, start_server/1, mine_coin/2, worker/1, server/1]).
+-export([start_worker/1, start_server/1, mine_coin/2, worker/0, server/1]).
 
 mine_coin(From, K) ->
     Rand_string = "jonathan.bravo;" ++ base64:encode(crypto:strong_rand_bytes(6)),
@@ -20,14 +20,15 @@ spawn_mining(I, K, From) when I > 0 ->
     spawn(?MODULE, mine_coin, [From, K]),
     spawn_mining(I-1, K, From).
 
-worker(Server) ->
+worker() ->
     receive
-        send_start ->
-            {mining_server, Server} ! {send_start, self()};
+        {talk_to_server, Server} ->
+            io:fwrite("Talking to server"),
+            {mining_server, Server} ! {send_start_to_worker, self()};
         {start_mining_server, K, Server} ->
             spawn_mining(8, K, Server)
     end,
-    worker(Server).
+    worker().
 
 server(K) ->
     receive
@@ -35,7 +36,8 @@ server(K) ->
             io:fwrite("~s\t~s~n", [Rand_string, Hash_string]);
         {start_mining, K} ->
             spawn_mining(8, K, self());
-        {send_start, Worker} ->
+        {send_start_to_worker, Worker} ->
+            io:fwrite("Sending start to worker"),
             Worker ! {start_mining_server, K, self()}
     end,
     server(K).
@@ -44,5 +46,6 @@ start_server(K) ->
     register(mining_server, spawn(?MODULE, server, [K])).
 
 start_worker(Server) ->
-    Pid = spawn(?MODULE, worker, [Server]),
-    Pid ! send_start.
+    Pid = spawn(?MODULE, worker, []),
+    Pid ! {talk_to_server, Server},
+    Pid.
