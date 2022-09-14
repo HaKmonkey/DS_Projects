@@ -40,7 +40,9 @@ server(K) ->
     server(K).
 
 start_server(K) ->
-    register(mining_server, spawn(?MODULE, server, [K])).
+    register(mining_server, spawn(?MODULE, server, [K])),
+    mining_server ! {start_mining, K},
+    K.
 
 start_worker(Server) ->
     Pid = spawn(?MODULE, worker, []),
