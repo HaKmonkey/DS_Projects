@@ -21,11 +21,10 @@ spawn_mining(I, K, From) when I > 0 ->
     spawn_mining(I-1, K, From).
 
 worker(Server) ->
-    {mining_server, Server} ! {send_start, self()},
-    io:fwrite("send worker message"),
     receive
+        send_start ->
+            {mining_server, Server} ! {send_start, self()};
         {start_mining_server, K, Server} ->
-            io:fwrite("got message"),
             spawn_mining(8, K, Server)
     end,
     worker(Server).
@@ -37,7 +36,6 @@ server(K) ->
         {start_mining, K} ->
             spawn_mining(8, K, self());
         {send_start, Worker} ->
-            io:fwrite("Got message"),
             Worker ! {start_mining_server, K, self()}
     end,
     server(K).
@@ -46,4 +44,5 @@ start_server(K) ->
     register(mining_server, spawn(?MODULE, server, [K])).
 
 start_worker(Server) ->
-    spawn(?MODULE, worker, [Server]).
+    Pid = spawn(?MODULE, worker, [Server]),
+    Pid ! send_start.
