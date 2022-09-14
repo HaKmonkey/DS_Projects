@@ -8,6 +8,7 @@ mine_coin(From, K) ->
     Zero_check = lists:concat(lists:duplicate(K, "0")),
     Prefix = string:slice(Hash_string, 0, K),
     B = string:equal(Prefix,Zero_check),
+    io:fwrite("~s ~s~n", [Rand_string, Hash_string]),
     if 
         B -> From ! {found_coin, Rand_string, Hash_string};
         true -> mine_coin(From, K)
@@ -20,9 +21,11 @@ spawn_mining(I, K, From) when I > 0 ->
     spawn_mining(I-1, K, From).
 
 worker(Server) ->
-    Server ! {send_start, self()},
+    {mining_server, Server} ! {send_start, self()},
+    io:fwrite("send worker message"),
     receive
         {start_mining_server, K, Server} ->
+            io:fwrite("got message"),
             spawn_mining(8, K, Server)
     end,
     worker(Server).
@@ -34,6 +37,7 @@ server(K) ->
         {start_mining, K} ->
             spawn_mining(8, K, self());
         {send_start, Worker} ->
+            io:fwrite("Got message"),
             Worker ! {start_mining_server, K, self()}
     end,
     server(K).
