@@ -1,86 +1,45 @@
 -module(project1).
 
-% -export([worker/0, encode_hash/3, generate_string/2, check_hash/3, start/1]).
+-export([start_worker/1, start_server/1, mine_coin/2, worker/1, server/1]).
 
-% generate_string(Worker) ->
-%     Byte_num = rand:uniform(100),
-%     Rand_string = "jonathan.bravo;" ++ binary:bin_to_list(binary:encode_hex(crypto:strong_rand_bytes(Byte_num))),
-%     Worker ! {encode_hash, Rand_string}.
-
-% encode_hash(Worker, Rand_string) ->
-%     Hash_string = erlang:integer_to_list(binary:decode_unsigned(crypto:hash(sha256, Rand_string)), 16),
-%     Worker ! {check_hash, Hash_string}.
-
-% check_hash(Worker, Hash_string, K) ->
-%     Prefix = lists:concat(lists:duplicate(K, "0")),
-%     B = string:find(Hash_string, Prefix) =:= Hash_string,
-%     if
-%         B ->
-%             io:fwrite("~s~n~n",[Hash_string]),
-%             Worker ! {write_hash, Hash_string};
-%         true ->
-%             io:fwrite("~w~n~n", [Worker]),
-%             Worker ! {gen_string}
-%         end.
-
-% % will take a value K
-% worker(K) ->
-%     receive
-%         {gen_string} ->
-%             generate_string(self()),
-%             worker(K);
-%         {encode_hash, Rand_string} ->
-%             encode_hash(self(), Rand_string),
-%             worker(K);
-%         {check_hash, Hash_string, K} ->
-%             check_hash(self(), Hash_string, K),
-%             worker(K);
-%         {write_hash, Hash_string} ->
-%             io:fwrite("~s~n",[Hash_string]),
-%             worker(K)
-%     end.
-
--export([start/1]).
-
-mine_coin(K) ->
-    %Byte_num = rand:uniform(100),
-    Rand_string = "jonathan.bravo;" ++ binary:bin_to_list(base64:encode(crypto:strong_rand_bytes(8))),
-    Hash_string = erlang:integer_to_list(binary:decode_unsigned(crypto:hash(sha256, Rand_string)), 16),
-    Prefix = lists:concat(lists:duplicate(K, "0")),
-    B = string:find(Hash_string, Prefix) =:= Hash_string,
-    if
-        B -> 
-            io:fwrite("~s\t~s~n~n", [Rand_string, Hash_string]);
-            %Host ! {Rand_string, Hash_string};
-            %io:fwrite("~s~n~n",[Hash_string]);
-        true ->
-            mine_coin(K)
+mine_coin(From, K) ->
+    Rand_string = "jonathan.bravo;" ++ base64:encode(crypto:strong_rand_bytes(6)),
+    Hash_string = io_lib:format("~64.16.0b",[binary:decode_unsigned(crypto:hash(sha256, Rand_string))]),
+    Zero_check = lists:concat(lists:duplicate(K, "0")),
+    Prefix = string:slice(Hash_string, 0, K),
+    B = string:equal(Prefix,Zero_check),
+    if 
+        B -> From ! {found_coin, Rand_string, Hash_string};
+        true -> mine_coin(From, K)
     end.
 
-% will take a value K
-% worker(K) ->
-%     mine_coin(self(), K),
-%     receive
-%         {Rand_string, Hash_string} ->
-%             % Host ! {Rand_string, Hash_string},
-%             io:fwrite("~s    ~s~n~n", [Rand_string, Hash_string]),
-%             worker(K)
-%     end.
+spawn_mining(0, _, _) ->
+    done;
+spawn_mining(I, K, From) when I > 0 ->
+    spawn(?MODULE, mine_coin, [From, K]),
+    spawn_mining(I-1, K, From).
 
+worker(Server) ->
+    Server ! {send_start, self()},
+    receive
+        {start_mining_server, K, Server} ->
+            spawn_mining(8, K, Server)
+    end,
+    worker(Server).
 
-% server(K) ->
-%     receive
-%         spawn_worker ->
-%             spawn(fun() -> worker(self(), K) end);
-%         {Rand_string, Hash_string} ->
-%             io:fwrite("~s    ~s~n~n", [Rand_string, Hash_string]),
-%             server(K)
-%    end.
+server(K) ->
+    receive
+        {found_coin, Rand_string, Hash_string} ->
+            io:fwrite("~s\t~s~n", [Rand_string, Hash_string]);
+        {start_mining, K} ->
+            spawn_mining(8, K, self());
+        {send_start, Worker} ->
+            Worker ! {start_mining_server, K, self()}
+    end,
+    server(K).
 
-start(K) ->
-    mine_coin(K).
-    %spawn(fun() -> worker(K) end).
-    % Server = spawn(fun() -> server(K) end),
-    % Server ! spawn_worker.
+start_server(K) ->
+    register(mining_server, spawn(?MODULE, server, [K])).
 
-    %io:fwrite("~w~n", [Worker1]),
+start_worker(Server) ->
+    spawn(?MODULE, worker, [Server]).
