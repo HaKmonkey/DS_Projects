@@ -23,25 +23,26 @@ worker() ->
     receive
         {talk_to_server, Server} ->
             {mining_server, Server} ! {send_start_to_worker, self()};
-        {start_mining_server, K, Server} ->
+        {start_mining, K, Server} ->
             spawn_mining(8, K, Server)
     end,
     worker().
 
 server(K) ->
     receive
-        {found_coin, Rand_string, Hash_string} ->
-            io:fwrite("~s\t~s~n", [Rand_string, Hash_string]);
-        {start_mining, K} ->
-            spawn_mining(8, K, self());
+        launch_worker ->
+            Pid = spawn(?MODULE, worker, []),
+            Pid ! {start_mining, K, self()};
         {send_start_to_worker, Worker} ->
-            Worker ! {start_mining_server, K, self()}
+            Worker ! {start_mining, K, self()};
+        {found_coin, Rand_string, Hash_string} ->
+            io:fwrite("~s\t~s~n", [Rand_string, Hash_string])
     end,
     server(K).
 
 start_server(K) ->
     register(mining_server, spawn(?MODULE, server, [K])),
-    mining_server ! {start_mining, K},
+    mining_server ! launch_worker,
     K.
 
 start_worker(Server) ->
