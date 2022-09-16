@@ -24,7 +24,7 @@ worker() ->
         {talk_to_server, Server} ->
             {mining_server, Server} ! {send_start_to_worker, self()};
         {start_mining, K, Server} ->
-            spawn_mining(8, K, Server)
+            spawn_mining(10, K, Server)
     end,
     worker().
 
