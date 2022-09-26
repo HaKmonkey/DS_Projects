@@ -1,5 +1,7 @@
 # Project 1
 
+By: Jonathan Bravo & Yu Hong
+
 ## Usage
 
 First you must `cd` into the project directory to compile the code. This can be
