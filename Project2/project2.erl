@@ -34,21 +34,27 @@ start(NumNodes, Topology, Algorithm) ->
     io:format("~p ~p ~p~n", [X, Topology, Algorithm]).
 
 find_neighbor(NodeList, Topology) ->
-    case Topology of
-        'full' -> neighbor = full_neighbor_node(NodeList)
+    case {Topology} of
+        {'full'} ->
+            Neighbor = full_neighbor_node(NodeList);
+        {'line'} ->
+            io:fwrite("line")
 end.
 
 num(L) -> length([X || X <- L, X < 1]).
 
-full_neighbor_node(list) when is_list(list)->
-    full_neighbor_node(list, num(list), []).
+%%full_neighbor_node(list) when is_list(list)->
+%%    full_neighbor_node(list, num(list), []).
+full_neighbor_node(List) ->
+    io:fwrite("~p ~n",[lists:nth(1, List)]),
+    full_neighbor_node(List, length(List), []).
 
-full_neighbor_node(list, 0, acc) ->
-    acc,
-    io:fwrite("~w ~n",[acc]);
+full_neighbor_node(List, 0, Acc) ->
+    Acc,
+    io:fwrite("~w ~n",[Acc]);
 
-full_neighbor_node(list, i, acc) when i > 0 ->
-    full_neighbor_node(list, i-1, lists:delete(lists:nth(i-1,list),list)).
+full_neighbor_node(List, I, Acc) when I > 0 ->
+    full_neighbor_node(List, I-1, [lists:delete(lists:nth(I,List),List)|Acc]).
 
         
     
