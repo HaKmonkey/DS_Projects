@@ -1,9 +1,12 @@
 -module(project2).
 
+-import(tools,[shuffle/1,randomize/1,randomize/2]).
+
 -export([start/3, gossip_node/1, push_sum_node/1, spawn_node/4, find_neighbor/2,
     full_neighbor_node/1, full_neighbor_node/3,
     line_neighbor_node/2, line_neighbor_node/4,
-    twoD_neighbor_node/3, twoD_neighbor_node/5]).
+    twoD_neighbor_node/3, twoD_neighbor_node/5,
+    imp2D/3, imp2D/5, random_neighbor/3]).
 
 gossip_node(X) ->
     io:fwrite("Gossip Node~p Started~n", [X]).
@@ -125,7 +128,20 @@ twoD_neighbor_node(NodeList, I, Acc, N, M) ->
 
 
 imp2D(NodeList, N, M) when is_list(NodeList)->
+    io:fwrite("~p ~p",[N, M]),
     imp2D(NodeList, M, [], N, M).
 
 imp2D(NodeList, 0, Acc, N, M) ->
-    Acc.
+    Acc;
+
+imp2D(NodeList, I, Acc, N, M) when I == 1 ->
+    imp2D(NodeList, I-1, [[lists:nth(I+1,NodeList),lists:nth(I+N,NodeList),random_neighbor(NodeList, [lists:nth(I+1,NodeList),lists:nth(I+N,NodeList)], I)] | Acc], N, M );
+
+imp2D(NodeList, I, Acc, N, M) when I == M ->
+    imp2D(NodeList, I-1, [[lists:nth(I-1,NodeList),lists:nth(I-N,NodeList),lists:nth(I-N-1,NodeList),random_neighbor(NodeList,[lists:nth(I-1,NodeList),lists:nth(I-N,NodeList),lists:nth(I-N-1,NodeList)], I)] |Acc], N, M).
+
+random_neighbor(NodeList, List, I) ->
+    Temp = lists:delete(lists:nth(I,NodeList),NodeList),
+    Temp2 = lists:filter(fun (Elem) -> not lists:member(Elem,List) end, Temp),
+    io:fwrite("~p ~n", [Temp2]),
+    hd(shuffle(Temp2)).
