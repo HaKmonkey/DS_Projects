@@ -47,9 +47,10 @@ find_neighbor(NodeList, Topology) ->
             Neighbor = line_neighbor_node(NodeList,N),
             io:fwrite("~w ~n", [Neighbor]);
         {'2D'} ->
-            io:fwrite("N:~p M:~p",[N,M]),
-            Neighbor = twoD_neighbor_node(NodeList,M,N)
-
+            Neighbor = twoD_neighbor_node(NodeList,M,N),
+            io:fwrite("~w ~n", [Neighbor]);
+        {'imp2D'} ->
+            Neighbor = imp2D(NodeList, M, N)
 
 end.
 
@@ -64,10 +65,11 @@ full_neighbor_node(List) when is_list(List) ->
 
 full_neighbor_node(List, 0, Acc) ->
     Acc;
-%%    io:fwrite("~w ~n", [Acc]);
 
 full_neighbor_node(List, I, Acc) when I > 0 ->
     full_neighbor_node(List, I-1, [lists:delete(lists:nth(I,List),List)|Acc]).
+
+
 
 line_neighbor_node(NodeList, N) when is_list(NodeList)->
     line_neighbor_node(NodeList, length(NodeList), [], N).
@@ -97,25 +99,33 @@ twoD_neighbor_node(NodeList, I, Acc, N, M) when I == 1 ->
     twoD_neighbor_node(NodeList, I-1, [[lists:nth(I+1,NodeList),lists:nth(I+N,NodeList)] | Acc], N, M);
 
 twoD_neighbor_node(NodeList, I, Acc, N, M) when I == N ->
-    twoD_neighbor_node(NodeList, I-1, [[lists:nth(I-1,NodeList),lists:nth(I+N,NodeList)] | Acc], N, M);
+    twoD_neighbor_node(NodeList, I-1, [[lists:nth(I-1,NodeList),lists:nth(I+N,NodeList),lists:nth(I+N-1,NodeList)] | Acc], N, M);
 
 twoD_neighbor_node(NodeList, I, Acc, N, M) when I == M ->
-    twoD_neighbor_node(NodeList, I-1, [[lists:nth(I-1,NodeList),lists:nth(I-N,NodeList)] | Acc], N, M);
+    twoD_neighbor_node(NodeList, I-1, [[lists:nth(I-1,NodeList),lists:nth(I-N,NodeList),lists:nth(I-N-1,NodeList)] | Acc], N, M);
 
 twoD_neighbor_node(NodeList, I, Acc, N, M) when I == M-N+1 ->
-    twoD_neighbor_node(NodeList, I-1, [[lists:nth(I+1,NodeList),lists:nth(I-N,NodeList)] | Acc], N, M);
+    twoD_neighbor_node(NodeList, I-1, [[lists:nth(I+1,NodeList),lists:nth(I-N,NodeList),lists:nth(I-N+1,NodeList)] | Acc], N, M);
 
 twoD_neighbor_node(NodeList, I, Acc, N, M) when I > 1 , I < N ->
-    twoD_neighbor_node(NodeList, I-1, [[lists:nth(I-1,NodeList),lists:nth(I+1, NodeList),lists:nth(I+N,NodeList)] | Acc],N,M);
+    twoD_neighbor_node(NodeList, I-1, [[lists:nth(I-1,NodeList),lists:nth(I+1, NodeList),lists:nth(I+N,NodeList),lists:nth(I+N-1,NodeList),lists:nth(I+N+1,NodeList)] | Acc],N,M);
 
 twoD_neighbor_node(NodeList, I, Acc, N, M) when I > (M-N) , I < M ->
-    twoD_neighbor_node(NodeList, I-1, [[lists:nth(I-1,NodeList),lists:nth(I+1, NodeList),lists:nth(I-N,NodeList)] | Acc], N, M);
+    twoD_neighbor_node(NodeList, I-1, [[lists:nth(I-1,NodeList),lists:nth(I+1, NodeList),lists:nth(I-N,NodeList),lists:nth(I-N+1,NodeList),lists:nth(I-N-1,NodeList)] | Acc], N, M);
 
 twoD_neighbor_node(NodeList, I, Acc, N, M) when I rem N == 0 ->
-    twoD_neighbor_node(NodeList, I-1, [[lists:nth(I-1,NodeList),lists:nth(I+N, NodeList),lists:nth(I-N,NodeList)] | Acc], N, M);
+    twoD_neighbor_node(NodeList, I-1, [[lists:nth(I-1,NodeList),lists:nth(I+N, NodeList),lists:nth(I-N,NodeList), lists:nth(I+N-1, NodeList), lists:nth(I-N-1, NodeList)] | Acc], N, M);
 
 twoD_neighbor_node(NodeList, I, Acc, N, M) when I rem N == 1 ->
-    twoD_neighbor_node(NodeList, I-1, [[lists:nth(I+1,NodeList),lists:nth(I+N, NodeList),lists:nth(I-N,NodeList)] | Acc], N, M);
+    twoD_neighbor_node(NodeList, I-1, [[lists:nth(I+1,NodeList),lists:nth(I+N, NodeList),lists:nth(I-N,NodeList), lists:nth(I+N+1, NodeList), lists:nth(I-N+1, NodeList)] | Acc], N, M);
 
 twoD_neighbor_node(NodeList, I, Acc, N, M) ->
-    twoD_neighbor_node(NodeList, I-1, [[lists:nth(I+1,NodeList),lists:nth(I-1,NodeList),lists:nth(I+N, NodeList),lists:nth(I-N,NodeList)] | Acc], N, M).
+    twoD_neighbor_node(NodeList, I-1, [[lists:nth(I+1,NodeList),lists:nth(I-1,NodeList),lists:nth(I+N, NodeList),lists:nth(I-N,NodeList), lists:nth(I+N-1, NodeList), lists:nth(I-N-1, NodeList), lists:nth(I+N+1, NodeList), lists:nth(I-N+1, NodeList)] | Acc], N, M).
+
+
+
+imp2D(NodeList, N, M) when is_list(NodeList)->
+    imp2D(NodeList, M, [], N, M).
+
+imp2D(NodeList, 0, Acc, N, M) ->
+    Acc.
