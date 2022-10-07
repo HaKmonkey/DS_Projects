@@ -1,6 +1,7 @@
 -module(project2).
 
--export([start/3, gossip_node/1, push_sum_node/1, spawn_node/4, find_neighbor/2, full_neighbor_node/1, full_neighbor_node/3]).
+-export([start/3, gossip_node/1, push_sum_node/1, spawn_node/4, find_neighbor/2,
+    full_neighbor_node/1, full_neighbor_node/3, line_neighbor_node/2, line_neighbor_node/4]).
 
 gossip_node(X) ->
     io:fwrite("Gossip Node~p Started~n", [X]).
@@ -36,25 +37,41 @@ start(NumNodes, Topology, Algorithm) ->
 find_neighbor(NodeList, Topology) ->
     case {Topology} of
         {'full'} ->
-            Neighbor = full_neighbor_node(NodeList);
+            Neighbor = full_neighbor_node(NodeList),
+            io:fwrite("~w ~n", [Neighbor]);
         {'line'} ->
-            io:fwrite("line")
+            N = length(NodeList),
+            Neighbor = line_neighbor_node(NodeList,N),
+            io:fwrite("~w ~n", [Neighbor])
+
 end.
 
 num(L) -> length([X || X <- L, X < 1]).
 
-%%full_neighbor_node(list) when is_list(list)->
-%%    full_neighbor_node(list, num(list), []).
-full_neighbor_node(List) ->
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%topology specific function
+full_neighbor_node(List) when is_list(List) ->
     io:fwrite("~p ~n",[lists:nth(1, List)]),
     full_neighbor_node(List, length(List), []).
 
 full_neighbor_node(List, 0, Acc) ->
-    Acc,
-    io:fwrite("~w ~n",[Acc]);
+    Acc;
+%%    io:fwrite("~w ~n", [Acc]);
 
 full_neighbor_node(List, I, Acc) when I > 0 ->
     full_neighbor_node(List, I-1, [lists:delete(lists:nth(I,List),List)|Acc]).
 
-        
-    
+line_neighbor_node(NodeList, N) when is_list(NodeList)->
+    line_neighbor_node(NodeList, length(NodeList), [], N).
+
+line_neighbor_node(NodeList, 0, Acc, N) ->
+    Acc;
+
+line_neighbor_node(NodeList, I, Acc, N) when I == 1 ->
+    line_neighbor_node(NodeList, I-1, [lists:nth(I + 1, NodeList)|Acc], N);
+
+line_neighbor_node(NodeList, I, Acc, N) when I == N ->
+    line_neighbor_node(NodeList, I-1, [lists:nth(I-1, NodeList)|Acc], N);
+
+line_neighbor_node(NodeList, I, Acc, N) ->
+    line_neighbor_node(NodeList, I-1, [[lists:nth(I-1, NodeList),lists:nth(I + 1, NodeList)]|Acc], N).
