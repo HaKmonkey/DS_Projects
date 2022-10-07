@@ -35,14 +35,19 @@ start(NumNodes, Topology, Algorithm) ->
     io:format("~p ~p ~p~n", [X, Topology, Algorithm]).
 
 find_neighbor(NodeList, Topology) ->
+    N = length(NodeList),
+    M = math:pow(math:ceil(math:sqrt(N)), 2),
     case {Topology} of
         {'full'} ->
             Neighbor = full_neighbor_node(NodeList),
             io:fwrite("~w ~n", [Neighbor]);
         {'line'} ->
-            N = length(NodeList),
             Neighbor = line_neighbor_node(NodeList,N),
-            io:fwrite("~w ~n", [Neighbor])
+            io:fwrite("~w ~n", [Neighbor]);
+        {'2D'} ->
+            io:fwrite("N:~p M:~p",[N,M]),
+            Neighbor = twoD_neighbor_node(NodeList,N,M)
+
 
 end.
 
@@ -50,6 +55,7 @@ num(L) -> length([X || X <- L, X < 1]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%topology specific function
+%% !!! The list start from1 which is different from elixir.
 full_neighbor_node(List) when is_list(List) ->
     io:fwrite("~p ~n",[lists:nth(1, List)]),
     full_neighbor_node(List, length(List), []).
@@ -75,3 +81,6 @@ line_neighbor_node(NodeList, I, Acc, N) when I == N ->
 
 line_neighbor_node(NodeList, I, Acc, N) ->
     line_neighbor_node(NodeList, I-1, [[lists:nth(I-1, NodeList),lists:nth(I + 1, NodeList)]|Acc], N).
+
+twoD_neighbor_node(NodeList, N, M) ->
+    erlang:error(not_implemented).
