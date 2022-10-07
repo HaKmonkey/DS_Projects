@@ -38,7 +38,7 @@ start(NumNodes, Topology, Algorithm) ->
 
 find_neighbor(NodeList, Topology) ->
     N = length(NodeList),
-    M = math:sqrt(N),
+    M = erlang:trunc(math:sqrt(N)),
     case {Topology} of
         {'full'} ->
             Neighbor = full_neighbor_node(NodeList),
@@ -84,11 +84,14 @@ line_neighbor_node(NodeList, I, Acc, N) when I == N ->
 line_neighbor_node(NodeList, I, Acc, N) ->
     line_neighbor_node(NodeList, I-1, [[lists:nth(I-1, NodeList),lists:nth(I + 1, NodeList)]|Acc], N).
 
+
+
 twoD_neighbor_node(NodeList, N, M) when is_list(NodeList)->
     twoD_neighbor_node(NodeList, M, [], N, M).
 
 twoD_neighbor_node(NodeList, 0, Acc, N, M) ->
-    Acc;
+    Acc,
+    io:fwrite("~w ~n", [Acc]);
 
 twoD_neighbor_node(NodeList, I, Acc, N, M) when I == 1 ->
     twoD_neighbor_node(NodeList, I-1, [[lists:nth(I+1,NodeList),lists:nth(I+N,NodeList)] | Acc], N, M);
