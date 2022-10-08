@@ -53,7 +53,8 @@ find_neighbor(NodeList, Topology) ->
             Neighbor = twoD_neighbor_node(NodeList,M,N),
             io:fwrite("~w ~n", [Neighbor]);
         {'imp2D'} ->
-            Neighbor = imp2D(NodeList, M, N)
+            Neighbor = imp2D(NodeList, M, N),
+            io:fwrite("~w ~n", [Neighbor])
 
 end.
 
@@ -128,7 +129,6 @@ twoD_neighbor_node(NodeList, I, Acc, N, M) ->
 
 
 imp2D(NodeList, N, M) when is_list(NodeList)->
-    io:fwrite("~p ~p",[N, M]),
     imp2D(NodeList, M, [], N, M).
 
 imp2D(NodeList, 0, Acc, N, M) ->
@@ -137,11 +137,42 @@ imp2D(NodeList, 0, Acc, N, M) ->
 imp2D(NodeList, I, Acc, N, M) when I == 1 ->
     imp2D(NodeList, I-1, [[lists:nth(I+1,NodeList),lists:nth(I+N,NodeList),random_neighbor(NodeList, [lists:nth(I+1,NodeList),lists:nth(I+N,NodeList)], I)] | Acc], N, M );
 
+imp2D(NodeList, I, Acc, N, M) when I == N ->
+    imp2D(NodeList, I-1, [[lists:nth(I-1,NodeList),lists:nth(I+N,NodeList),lists:nth(I+N-1,NodeList),random_neighbor(NodeList,[lists:nth(I-1,NodeList),lists:nth(I+N,NodeList),lists:nth(I+N-1,NodeList)], I)] | Acc], N, M);
+
 imp2D(NodeList, I, Acc, N, M) when I == M ->
-    imp2D(NodeList, I-1, [[lists:nth(I-1,NodeList),lists:nth(I-N,NodeList),lists:nth(I-N-1,NodeList),random_neighbor(NodeList,[lists:nth(I-1,NodeList),lists:nth(I-N,NodeList),lists:nth(I-N-1,NodeList)], I)] |Acc], N, M).
+    imp2D(NodeList, I-1, [[lists:nth(I-1,NodeList),lists:nth(I-N,NodeList),lists:nth(I-N-1,NodeList),random_neighbor(NodeList,[lists:nth(I-1,NodeList),lists:nth(I-N,NodeList),lists:nth(I-N-1,NodeList)], I)] |Acc], N, M);
+
+imp2D(NodeList, I, Acc, N, M) when I == M-N+1 ->
+    imp2D(NodeList, I-1, [[lists:nth(I+1,NodeList),lists:nth(I-N,NodeList),lists:nth(I-N+1,NodeList), random_neighbor(NodeList,[lists:nth(I+1,NodeList),lists:nth(I-N,NodeList),lists:nth(I-N+1,NodeList)],I)] | Acc], N, M );
+
+imp2D(NodeList, I, Acc, N, M) when I > 1 , I < N ->
+    imp2D(NodeList, I-1, [[lists:nth(I-1,NodeList),lists:nth(I+1, NodeList),lists:nth(I+N,NodeList),lists:nth(I+N-1,NodeList),lists:nth(I+N+1,NodeList), random_neighbor(NodeList, [lists:nth(I-1,NodeList),lists:nth(I+1, NodeList),lists:nth(I+N,NodeList),lists:nth(I+N-1,NodeList),lists:nth(I+N+1,NodeList)], I)] | Acc],N,M);
+
+imp2D(NodeList, I, Acc, N, M) when I > (M-N) , I < M ->
+    imp2D(NodeList, I-1, [[lists:nth(I-1,NodeList),lists:nth(I+1, NodeList),lists:nth(I-N,NodeList),lists:nth(I-N+1,NodeList),lists:nth(I-N-1,NodeList), random_neighbor(NodeList,[lists:nth(I-1,NodeList),lists:nth(I+1, NodeList),lists:nth(I-N,NodeList),lists:nth(I-N+1,NodeList),lists:nth(I-N-1,NodeList)],I)] | Acc], N, M);
+
+imp2D(NodeList, I, Acc, N, M) when I rem N == 0 ->
+    imp2D(NodeList, I-1,  [[lists:nth(I-1,NodeList),lists:nth(I+N, NodeList),lists:nth(I-N,NodeList), lists:nth(I+N-1, NodeList), lists:nth(I-N-1, NodeList), random_neighbor(NodeList, [lists:nth(I-1,NodeList),lists:nth(I+N, NodeList),lists:nth(I-N,NodeList), lists:nth(I+N-1, NodeList), lists:nth(I-N-1, NodeList)], I)] | Acc], N, M);
+
+imp2D(NodeList, I, Acc, N, M) when I rem N == 1 ->
+    imp2D(NodeList, I-1, [[lists:nth(I+1,NodeList),lists:nth(I+N, NodeList),lists:nth(I-N,NodeList), lists:nth(I+N+1, NodeList), lists:nth(I-N+1, NodeList), random_neighbor(NodeList, [lists:nth(I+1,NodeList),lists:nth(I+N, NodeList),lists:nth(I-N,NodeList), lists:nth(I+N+1, NodeList), lists:nth(I-N+1, NodeList)], I)] | Acc], N, M);
+
+%% TODO if the matrix only have 8 node, it failed.(To this data structure we do not have the other node)
+imp2D(NodeList, I, Acc, N, M) ->
+    imp2D(NodeList, I-1, [[lists:nth(I+1,NodeList),lists:nth(I-1,NodeList),lists:nth(I+N, NodeList),lists:nth(I-N,NodeList), lists:nth(I+N-1, NodeList), lists:nth(I-N-1, NodeList), lists:nth(I+N+1, NodeList), lists:nth(I-N+1, NodeList), random_neighbor(NodeList, [lists:nth(I+1,NodeList),lists:nth(I-1,NodeList),lists:nth(I+N, NodeList),lists:nth(I-N,NodeList), lists:nth(I+N-1, NodeList), lists:nth(I-N-1, NodeList), lists:nth(I+N+1, NodeList), lists:nth(I-N+1, NodeList)], I)] | Acc], N, M).
+
 
 random_neighbor(NodeList, List, I) ->
     Temp = lists:delete(lists:nth(I,NodeList),NodeList),
     Temp2 = lists:filter(fun (Elem) -> not lists:member(Elem,List) end, Temp),
-    io:fwrite("~p ~n", [Temp2]),
-    hd(shuffle(Temp2)).
+%%    io:fwrite("I:~p Temp2:~w Temp:~w List: ~w ~n", [I, Temp2, Temp, List]),
+    if
+        Temp2 == [] ->
+            ok;
+        true ->
+            hd(shuffle(Temp2))
+
+
+    end.
+%%    hd(shuffle(Temp2)).
