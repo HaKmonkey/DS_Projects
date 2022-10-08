@@ -34,7 +34,14 @@ start(NumNodes, Topology, Algorithm) ->
         {'full'} -> X = NumNodes;
         {'line'} -> X = NumNodes;
         {'2D'} -> X = erlang:trunc(math:pow(math:ceil(math:sqrt(NumNodes)), 2));
-        {'imp2D'} -> X = erlang:trunc(math:pow(math:ceil(math:sqrt(NumNodes)), 2))
+        {'imp2D'} ->
+            if
+                NumNodes < 16 ->
+                    X = erlang:trunc(math:pow(math:ceil(math:sqrt(16)), 2));
+                true ->
+                    X = erlang:trunc(math:pow(math:ceil(math:sqrt(NumNodes)), 2))
+            end
+
     end,
     spawn_node(X, [], Algorithm, Topology),
     io:format("~p ~p ~p~n", [X, Topology, Algorithm]).
@@ -166,13 +173,4 @@ imp2D(NodeList, I, Acc, N, M) ->
 random_neighbor(NodeList, List, I) ->
     Temp = lists:delete(lists:nth(I,NodeList),NodeList),
     Temp2 = lists:filter(fun (Elem) -> not lists:member(Elem,List) end, Temp),
-%%    io:fwrite("I:~p Temp2:~w Temp:~w List: ~w ~n", [I, Temp2, Temp, List]),
-    if
-        Temp2 == [] ->
-            ok;
-        true ->
-            hd(shuffle(Temp2))
-
-
-    end.
-%%    hd(shuffle(Temp2)).
+    hd(shuffle(Temp2)).
