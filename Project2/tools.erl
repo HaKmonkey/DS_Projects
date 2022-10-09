@@ -34,3 +34,7 @@ randomize(List) ->
   {_, D1} = lists:unzip(lists:keysort(1, D)),
   D1.
 
+
+
+
+
