@@ -16,8 +16,10 @@
 %% Takes a list and randomly shuffles it. Relies on random:uniform
 %%
 shuffle(List) ->
-  %% Determine the log n portion then randomize the list.
   randomize(round(math:log(length(List)) + 0.5), List).
+
+
+
 
 randomize(1, List) ->
   randomize(List);

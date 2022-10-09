@@ -32,7 +32,12 @@ gossip_node() ->
         {rumor,NodeList,RumorMap} ->
             Curr_ID = self(),
             Curr_Neighbor = element(2,find_curr_neighbor(Curr_ID,NodeList)),
-            Next_ID = hd(shuffle(Curr_Neighbor)),
+%%            io:fwrite("debug test info: ~w ~n",[Curr_Neighbor]),
+            if
+                is_list(Curr_Neighbor) -> Next_ID = hd(shuffle(Curr_Neighbor));
+                true -> Next_ID = Curr_Neighbor
+            end,
+
             Curr_Rumor = element(2,maps:find(Curr_ID,RumorMap)),
             Rumor_Values = maps:values(RumorMap),
             Flag = lists:member(10,Rumor_Values),
@@ -96,20 +101,18 @@ find_neighbor(NodeList, Topology) ->
         {'full'} ->
             Neighbor = full_neighbor_node(NodeList),
             send_neighbor_list(NodeList, Neighbor),
-
             io:fwrite("~w ~n", [Neighbor]);
         {'line'} ->
             Neighbor = line_neighbor_node(NodeList,N),
-%%            Temp = lists:zip(NodeList, Neighbor),
-            io:fwrite("find: ~p ~n",[hd(shuffle(NodeList))]),
-
-            hd(shuffle(NodeList)) ! message,
+            send_neighbor_list(NodeList, Neighbor),
             io:fwrite("~w ~n", [Neighbor]);
         {'2D'} ->
             Neighbor = twoD_neighbor_node(NodeList,M,N),
+            send_neighbor_list(NodeList, Neighbor),
             io:fwrite("~w ~n", [Neighbor]);
         {'imp2D'} ->
             Neighbor = imp2D(NodeList, M, N),
+            send_neighbor_list(NodeList, Neighbor),
             io:fwrite("~w ~n", [Neighbor])
 
 end.
@@ -151,8 +154,7 @@ twoD_neighbor_node(NodeList, N, M) when is_list(NodeList)->
     twoD_neighbor_node(NodeList, M, [], N, M).
 
 twoD_neighbor_node(NodeList, 0, Acc, N, M) ->
-    Acc,
-    io:fwrite("~w ~n", [Acc]);
+    Acc;
 
 twoD_neighbor_node(NodeList, I, Acc, N, M) when I == 1 ->
     twoD_neighbor_node(NodeList, I-1, [[lists:nth(I+1,NodeList),lists:nth(I+N,NodeList)] | Acc], N, M);
