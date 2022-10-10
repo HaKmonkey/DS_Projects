@@ -39,10 +39,15 @@ get_neighbor(Self, Topology, NodeList) ->
             end;
         {'2D'} ->
             NeighborList = neighbors_from_grid(Self, NodeList);
-        {'imp2D'} ->
-            InitNeighborList = neighbors_from_grid(Self, NodeList),
+        {'imp3D'} ->
+            SelfIndex = index_of(Self, NodeList),
+            Edge = trunc(math:pow(length(NodeList),(1/3))),
+            PlaneCount = Edge * Edge,
+            Z = trunc(math:ceil(SelfIndex / PlaneCount)),
+            Zplane = lists:sublist(NodeList, ((Z-1)*PlaneCount)+1,PlaneCount),
+            InitNeighborList = neighbors_from_grid(Self, Zplane),
             LessSelf = lists:delete(Self, NodeList),
-            ImpNeighbor = lists:delete(InitNeighborList, LessSelf),
+            ImpNeighbor = lists:delete(Zplane, LessSelf),
             NeighborList = lists:append([shuffle(ImpNeighbor)], InitNeighborList)
     end,
     shuffle(NeighborList). % Returns the randomly selected neighbor
@@ -153,7 +158,7 @@ start(NumNodes, Topology, Algorithm) ->
         {'full'} -> X = NumNodes;
         {'line'} -> X = NumNodes;
         {'2D'} -> X = erlang:trunc(math:pow(math:ceil(math:sqrt(NumNodes)), 2));
-        {'imp2D'} -> X = erlang:trunc(math:pow(math:ceil(math:sqrt(NumNodes)), 2)) %% CHANGED MATH
+        {'imp3D'} -> X = erlang:trunc(math:pow(math:ceil(math:pow(NumNodes, (1/3))), 3))
     end,
     Server = spawn(?MODULE, server, [StartTime, Topology, Algorithm, 0, -1]),
     Server ! {'spawn_nodes', X}.
