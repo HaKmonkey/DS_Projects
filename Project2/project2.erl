@@ -1,6 +1,6 @@
 -module(project2).
 
--export([start/3, server/2, gossip_node/1, propagate_rumor/3, push_sum_node/4]).
+-export([start/3, server/5, gossip_node/2, propagate_rumor/3, push_sum_node/5]).
 
 shuffle(List) ->
     lists:nth(rand:uniform(length(List)), List).
@@ -53,29 +53,31 @@ propagate_rumor(From, Topology, NodeList) ->
     Neighbor ! {rumor, Topology, NodeList},
     propagate_rumor(From, Topology, NodeList).
 
-gossip_node(Rumor) ->
+gossip_node(From, Rumor) ->
     receive
         {rumor, Topology, NodeList} ->
             SendNode = spawn(?MODULE, propagate_rumor, [self(), Topology, NodeList]),
             NewRumor = Rumor + 1
     end,
-    io:fwrite("~w heard rumor ~p times~n", [self(), NewRumor]),
-    gossip_node(self(), NewRumor, SendNode).
+    %io:fwrite("~w heard rumor ~p times~n", [self(), NewRumor]),
+    gossip_node(From, self(), NewRumor, SendNode).
 
-gossip_node(_, 10, SendNode) ->
+gossip_node(Host, _, 10, SendNode) ->
+    Host ! {finished},
     exit(SendNode, "Heard rumor 10 times."); % kill propagate_rumor
-gossip_node(From, Rumor, SendNode) ->
+gossip_node(Host, From, Rumor, SendNode) ->
     receive
         {rumor, _, _} ->
             NewRumor = Rumor + 1
     end,
-    io:fwrite("~w heard rumor ~p times~n", [From, NewRumor]),
-    gossip_node(From, NewRumor, SendNode).
+    %io:fwrite("~w heard rumor ~p times~n", [From, NewRumor]),
+    gossip_node(Host, From, NewRumor, SendNode).
 
-push_sum_node(_, _, Estimate, 3) ->
+push_sum_node(From, _, _, Estimate, 3) ->
+    From ! {finished},
     io:fwrite("E: ~p~n",[Estimate]),
     exit(self(), "Estimate didn't change 3 times.");
-push_sum_node(Sum, Weight, Estimate, Count) ->
+push_sum_node(From, Sum, Weight, Estimate, Count) ->
     receive
         {start, Topology, NodeList} ->
             Neighbor = get_neighbor(self(), Topology, NodeList),
@@ -99,26 +101,31 @@ push_sum_node(Sum, Weight, Estimate, Count) ->
             NewWeight = (W + Weight) / 2,
             Neighbor ! {push, NewSum, NewWeight, Topology, NodeList}
     end,
-    push_sum_node(NewSum, NewWeight, NewEstimate, NewCount).
+    push_sum_node(From, NewSum, NewWeight, NewEstimate, NewCount).
 
 spawn_node(0, NodeList, From, _) ->
-    From ! {NodeList};
+    From ! {finished_spawning, NodeList};
 spawn_node(X, NodeList, From, Algorithm) when X > 0 ->
     case {Algorithm} of
         {'gossip'} ->
-            Pid = spawn(?MODULE, gossip_node, [0]);
+            Pid = spawn(?MODULE, gossip_node, [From, 0]);
         {'push-sum'} ->
-            Pid = spawn(?MODULE, push_sum_node, [X, 1, (X/1), 0])
+            Pid = spawn(?MODULE, push_sum_node, [From, X, 1, (X/1), 0])
     end,
     NewNodeList = lists:append([Pid], NodeList),
     spawn_node(X-1, NewNodeList, From, Algorithm).
 
-server(Topology, Algorithm) ->
+server(StartTime, _, _, Count, NodeCount) when Count == NodeCount ->
+    EndTime = erlang:timestamp(),
+    io:fwrite("FINISHED in ~pms~n", [timer:now_diff(EndTime, StartTime)]);
+server(StartTime, Topology, Algorithm, Count, NodeCount) ->
     receive
         {'spawn_nodes', X} ->
-            spawn_node(X, [], self(), Algorithm);
+            spawn_node(X, [], self(), Algorithm),
+            NewCount = Count,
             %io:format("~p ~p ~p~n", [X, Topology, Algorithm]);
-        {NodeList} ->
+            NewNodeCount = X;
+        {finished_spawning, NodeList} ->
             %io:fwrite("~w~n",[NodeList]),
             SeedNode = shuffle(NodeList),
             case {Algorithm} of
@@ -126,16 +133,22 @@ server(Topology, Algorithm) ->
                     SeedNode ! {rumor, Topology, NodeList};
                 {'push-sum'} ->
                     SeedNode ! {start, Topology, NodeList}
-            end
+            end,
+            NewCount = Count,
+            NewNodeCount = NodeCount;
+        {finished} ->
+            NewNodeCount = NodeCount,
+            NewCount = Count + 1
     end,
-    server(Topology, Algorithm).
+    server(StartTime, Topology, Algorithm, NewCount, NewNodeCount).
 
 start(NumNodes, Topology, Algorithm) ->
+    StartTime = erlang:timestamp(),
     case {Topology} of
         {'full'} -> X = NumNodes;
         {'line'} -> X = NumNodes;
         {'2D'} -> X = erlang:trunc(math:pow(math:ceil(math:sqrt(NumNodes)), 2));
         {'imp2D'} -> X = erlang:trunc(math:pow(math:ceil(math:sqrt(NumNodes)), 2))
     end,
-    Server = spawn(?MODULE, server, [Topology, Algorithm]),
+    Server = spawn(?MODULE, server, [StartTime, Topology, Algorithm, 0, 0]),
     Server ! {'spawn_nodes', X}.
