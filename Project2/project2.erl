@@ -70,7 +70,8 @@ gossip_node(From, Rumor) ->
 gossip_node(Host, From, 10, SendNode) ->
     Host ! {finished_gossip},
     io:fwrite("~w heard rumor ~p times~n", [From, 10]),
-    exit(SendNode, "Heard rumor 10 times."); % kill propagate_rumor
+    exit(SendNode, "Heard rumor 10 times."), % kill propagate_rumor
+    exit(self(), "Heard rumor 10 times.");
 gossip_node(Host, From, Rumor, SendNode) ->
     receive
         {rumor, _, _} ->
@@ -98,7 +99,7 @@ push_sum_node(From, Sum, Weight, Estimate, Count) ->
             Check = math:pow(10,-10),
             NewEstimate = (S + Sum) / (W + Weight),
             if 
-                Estimate - NewEstimate < Check ->
+                abs(Estimate - NewEstimate) < Check ->
                     NewCount = Count + 1;
                 true ->
                     NewCount = 0
