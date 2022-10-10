@@ -63,7 +63,7 @@ gossip_node(From, Rumor) ->
     gossip_node(From, self(), NewRumor, SendNode).
 
 gossip_node(Host, _, 10, SendNode) ->
-    Host ! {finished},
+    Host ! {finished_gossip},
     exit(SendNode, "Heard rumor 10 times."); % kill propagate_rumor
 gossip_node(Host, From, Rumor, SendNode) ->
     receive
@@ -74,7 +74,7 @@ gossip_node(Host, From, Rumor, SendNode) ->
     gossip_node(Host, From, NewRumor, SendNode).
 
 push_sum_node(From, _, _, Estimate, 3) ->
-    From ! {finished},
+    From ! {finished_push_sum},
     io:fwrite("E: ~p~n",[Estimate]),
     exit(self(), "Estimate didn't change 3 times.");
 push_sum_node(From, Sum, Weight, Estimate, Count) ->
@@ -116,8 +116,8 @@ spawn_node(X, NodeList, From, Algorithm) when X > 0 ->
     spawn_node(X-1, NewNodeList, From, Algorithm).
 
 server(StartTime, _, _, Count, NodeCount) when Count == NodeCount ->
-    EndTime = erlang:timestamp(),
-    io:fwrite("FINISHED in ~pms~n", [timer:now_diff(EndTime, StartTime)]);
+    EndTime = erlang:system_time(millisecond),
+    io:fwrite("FINISHED in ~pms~n", [EndTime - StartTime]);
 server(StartTime, Topology, Algorithm, Count, NodeCount) ->
     receive
         {'spawn_nodes', X} ->
@@ -136,19 +136,24 @@ server(StartTime, Topology, Algorithm, Count, NodeCount) ->
             end,
             NewCount = Count,
             NewNodeCount = NodeCount;
-        {finished} ->
+        {finished_gossip} ->
+            NewNodeCount = NodeCount,
+            NewCount = Count + 1;
+        {finished_push_sum} ->
+            EndTime = erlang:system_time(millisecond),
+            io:fwrite("FINISHED in ~pms~n", [EndTime - StartTime]),
             NewNodeCount = NodeCount,
             NewCount = Count + 1
     end,
     server(StartTime, Topology, Algorithm, NewCount, NewNodeCount).
 
 start(NumNodes, Topology, Algorithm) ->
-    StartTime = erlang:timestamp(),
+    StartTime = erlang:system_time(millisecond),
     case {Topology} of
         {'full'} -> X = NumNodes;
         {'line'} -> X = NumNodes;
         {'2D'} -> X = erlang:trunc(math:pow(math:ceil(math:sqrt(NumNodes)), 2));
-        {'imp2D'} -> X = erlang:trunc(math:pow(math:ceil(math:sqrt(NumNodes)), 2))
+        {'imp2D'} -> X = erlang:trunc(math:pow(math:ceil(math:sqrt(NumNodes)), 2)) %% CHANGED MATH
     end,
-    Server = spawn(?MODULE, server, [StartTime, Topology, Algorithm, 0, 0]),
+    Server = spawn(?MODULE, server, [StartTime, Topology, Algorithm, 0, -1]),
     Server ! {'spawn_nodes', X}.
