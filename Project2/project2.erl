@@ -2,37 +2,18 @@
 
 -import(tools,[shuffle/1,randomize/1,randomize/2,while/1,while/2]).
 
--export([start/3, gossip_node/0, push_sum_node/1, spawn_node/4, find_neighbor/2,
+-export([start/3, gossip_node/0, push_sum_node/0, spawn_node/4, find_neighbor/3,
     full_neighbor_node/1, full_neighbor_node/3,
     line_neighbor_node/2, line_neighbor_node/4,
     twoD_neighbor_node/3, twoD_neighbor_node/5,
-    imp2D/3, imp2D/5, random_neighbor/3, send_neighbor_list/2, find_curr_neighbor/2]).
+    imp2D/3, imp2D/5, random_neighbor/3, send_neighbor_list/3, find_curr_neighbor/2]).
 
-%% Data_List: [Rumor,Neighbor_List].
-%%gossip_node() ->
-%%
-%%    receive
-%%        {neighborList, NeighborList} ->
-%%            io:fwrite("Neighbor: ~w ID: ~p ~n",[NeighborList,self()]);
-%%        {message,Rumor,Neighbors} ->
-%%            if
-%%                Rumor < 10 ->
-%%                    New_Rumor = Rumor + 1,
-%%                    hd(shuffle(Neighbors)) ! {message, New_Rumor, Curr_Neighbor},
-%%                    io:fwrite("Cur_Neighbor:~w Curr_ID: ~p ~n",[Curr_Neighbor, self()])
-%%
-%%            end
-%%
-%%
-%%    end,
-%%    gossip_node().
 
 gossip_node() ->
     receive
         {rumor,NodeList,RumorMap} ->
             Curr_ID = self(),
             Curr_Neighbor = element(2,find_curr_neighbor(Curr_ID,NodeList)),
-%%            io:fwrite("debug test info: ~w ~n",[Curr_Neighbor]),
             if
                 is_list(Curr_Neighbor) -> Next_ID = hd(shuffle(Curr_Neighbor));
                 true -> Next_ID = Curr_Neighbor
@@ -54,13 +35,52 @@ gossip_node() ->
     end,
     gossip_node().
 
-push_sum_node(X) ->
-    io:fwrite("Push Sum Node~p Started~n", [X]).
+push_sum_node() ->
+    receive
+        {message, NodeList, SumMap, ThresMap} ->
+            io:fwrite("ThresMap: ~w, ~n", [ThresMap]),
+            Curr_ID = self(),
+            Curr_Neighbor = element(2,find_curr_neighbor(Curr_ID,NodeList)),
+            if
+                is_list(Curr_Neighbor) -> Next_ID = hd(shuffle(Curr_Neighbor));
+                true -> Next_ID = Curr_Neighbor
+            end,
+            Bound = math:pow(10,-10),
+            %% find self's S and W
+            Curr_Temp = maps:find(Curr_ID,SumMap),
+            New_Curr_Tuple = {element(1,element(2,maps:find(Curr_ID,SumMap)))/2,element(2,element(2,maps:find(Curr_ID,SumMap)))/2},
+            New_Next_Tuple = {element(1,element(2,maps:find(Curr_ID,SumMap))) + element(1,New_Curr_Tuple),element(2,element(2,maps:find(Curr_ID,SumMap))) + element(2,New_Curr_Tuple)},
+            Test1 = element(1,New_Curr_Tuple)/element(2,New_Curr_Tuple),
+            Test2 = element(1,element(2,Curr_Temp))/element(2,element(2,Curr_Temp)),
+%%            io:fwrite("~n Test1: ~p, Curr_Temp ~w, Test2: ~p ~n",[Test1,Curr_Temp,Test2]),
+            Curr_Times = element(2, maps:find(Curr_ID,ThresMap)),
+%%            io:fwrite("Curr Times: ~p ~n",[Curr_Times]),
+            TempSumMap = maps:update(Curr_ID, New_Curr_Tuple, SumMap),
+            NewSumMap = maps:update(Next_ID, New_Next_Tuple,TempSumMap),
+%%            io:fwrite("push-sum CurrTuple: ~w  CurrID: ~p NextTuple: ~w NextID: ~p ~n",[New_Curr_Tuple,Curr_ID, New_Next_Tuple, Next_ID]),
+%%            io:fwrite("push-sum newSumMap: ~w ~n",[NewSumMap]),
+            Flag = lists:member(3,maps:values(ThresMap)),
+            if
+                Flag == false ->
+                    if
+                        (Test1 - Test2) < Bound ->
+                            NewThresMap = maps:update(Curr_ID,Curr_Times + 1,ThresMap),
+%%                            io:fwrite("SumMap ~w, ThresMap ~w ~n",[NewSumMap,NewThresMap]),
+                            Next_ID ! {message, NodeList,NewSumMap, NewThresMap};
+
+                        true -> Next_ID ! {message, NodeList,NewSumMap, ThresMap}
+                    end;
+                true -> done
+
+            end
+
+    end,
+    push_sum_node().
 
 
-spawn_node(0, NodeList, _, Topology) ->
+spawn_node(0, NodeList, Algorithm, Topology) ->
     io:format("~w ~p ~n",[NodeList,Topology]),
-    find_neighbor(NodeList, Topology);
+    find_neighbor(NodeList, Topology, Algorithm);
     %% we have the full nodeList, Then according to the Topology algorithm, we can find the neighbor list to each node.
 
 spawn_node(X, NodeList, Algorithm, Topology) when X > 0 ->
@@ -68,7 +88,7 @@ spawn_node(X, NodeList, Algorithm, Topology) when X > 0 ->
         {'gossip'} ->
             Pid = spawn(?MODULE, gossip_node, []);
         {'push-sum'} ->
-            Pid = spawn(?MODULE, push_sum_node, [X])
+            Pid = spawn(?MODULE, push_sum_node, [])
     end,
     NewNodeList = lists:append([Pid], NodeList),
     spawn_node(X-1, NewNodeList, Algorithm, Topology).
@@ -94,28 +114,30 @@ find_curr_neighbor(Curr_ID, NodeList) ->
     maps:find(Curr_ID, NodeList).
 %%    io:fwrite("find Neighbor: ~p ~w ~n",[Curr_ID,Res]).
 
-find_neighbor(NodeList, Topology) ->
+find_neighbor(NodeList, Topology, Algorithm) ->
     N = length(NodeList),
     M = erlang:trunc(math:sqrt(N)),
     case {Topology} of
         {'full'} ->
-            Neighbor = full_neighbor_node(NodeList),
-            send_neighbor_list(NodeList, Neighbor),
-            io:fwrite("~w ~n", [Neighbor]);
+            Neighbor = full_neighbor_node(NodeList);
+%%            send_neighbor_list(NodeList, Neighbor),
+%%            io:fwrite("~w ~n", [Neighbor]);
         {'line'} ->
-            Neighbor = line_neighbor_node(NodeList,N),
-            send_neighbor_list(NodeList, Neighbor),
-            io:fwrite("~w ~n", [Neighbor]);
+            Neighbor = line_neighbor_node(NodeList,N);
+%%            send_neighbor_list(NodeList, Neighbor),
+%%            io:fwrite("~w ~n", [Neighbor]);
         {'2D'} ->
-            Neighbor = twoD_neighbor_node(NodeList,M,N),
-            send_neighbor_list(NodeList, Neighbor),
-            io:fwrite("~w ~n", [Neighbor]);
+            Neighbor = twoD_neighbor_node(NodeList,M,N);
+%%            send_neighbor_list(NodeList, Neighbor),
+%%            io:fwrite("~w ~n", [Neighbor]);
         {'imp2D'} ->
-            Neighbor = imp2D(NodeList, M, N),
-            send_neighbor_list(NodeList, Neighbor),
-            io:fwrite("~w ~n", [Neighbor])
+            Neighbor = imp2D(NodeList, M, N)
+%%            send_neighbor_list(NodeList, Neighbor),
+%%            io:fwrite("~w ~n", [Neighbor])
 
-end.
+end,
+
+    send_neighbor_list(NodeList, Neighbor, Algorithm).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -224,25 +246,43 @@ random_neighbor(NodeList, List, I) ->
     Temp2 = lists:filter(fun (Elem) -> not lists:member(Elem,List) end, Temp),
     hd(shuffle(Temp2)).
 
-send_neighbor_list(NodeList, Neighbor) ->
-    Temp = lists:zip(NodeList, Neighbor),
-    Rumor_List = lists:duplicate(length(NodeList),0),
-    Rumor = lists:zip(NodeList,Rumor_List),
-    Rumor_Map = maps:from_list(Rumor),
-    Neighbor_Map = maps:from_list(Temp),
-    io:fwrite("Dict ~w", [Neighbor_Map]),
-    Node_ID = hd(shuffle(NodeList)),
-    Node_ID ! {rumor, Neighbor_Map, Rumor_Map},
-%%    lists:foreach(fun(N) ->
-%%        Node_Id = element(1,N),
-%%        Node_Neighbor = element(2,N),
-%%        Node_Id ! {rumor, Temp}
-%%                  end,Temp),
-%%    Random_Info = hd(shuffle(Temp)),
-%%    Random_ID = element(1, Random_Info),
-%%    Random_Neighbor = element(2,Random_Info),
-%%    Random_ID ! {message,0,Random_Neighbor},
-    io:fwrite("############################################~n").
+send_neighbor_list(NodeList, Neighbor, Algorithm) ->
+    case {Algorithm} of
+        {'gossip'} ->
+            Temp = lists:zip(NodeList, Neighbor),
+            Rumor_List = lists:duplicate(length(NodeList),0),
+            Rumor = lists:zip(NodeList,Rumor_List),
+            Rumor_Map = maps:from_list(Rumor),
+            Neighbor_Map = maps:from_list(Temp),
+            io:fwrite("Dict ~w", [Neighbor_Map]),
+            Node_ID = hd(shuffle(NodeList)),
+            Node_ID ! {rumor, Neighbor_Map, Rumor_Map};
+        {'push-sum'} ->
+            Temp = lists:zip(NodeList, Neighbor),
+            S_List = lists:seq(1,length(NodeList)),
+            W_List = lists:duplicate(length(NodeList),1),
+            Res_List = lists:zip(NodeList,lists:duplicate(length(NodeList),0)),
+            Res_Map = maps:from_list(Res_List),
+            Value_List = lists:zip(S_List,W_List),
+            Sum_Map = maps:from_list(lists:zip(NodeList,Value_List)),
+            Neighbor_Map = maps:from_list(Temp),
+            Node_ID = hd(shuffle(NodeList)),
+            Node_ID ! {message, Neighbor_Map, Sum_Map, Res_Map}
+
+end.
+
+
+
+
+%%    Temp = lists:zip(NodeList, Neighbor),
+%%    Rumor_List = lists:duplicate(length(NodeList),0),
+%%    Rumor = lists:zip(NodeList,Rumor_List),
+%%    Rumor_Map = maps:from_list(Rumor),
+%%    Neighbor_Map = maps:from_list(Temp),
+%%    io:fwrite("Dict ~w", [Neighbor_Map]),
+%%    Node_ID = hd(shuffle(NodeList)),
+%%    Node_ID ! {rumor, Neighbor_Map, Rumor_Map},
+%%    io:fwrite("############################################~n").
 
 
 
