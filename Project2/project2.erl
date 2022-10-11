@@ -70,7 +70,7 @@ gossip_node(From, Rumor) ->
 gossip_node(Host, From, 10, SendNode) ->
     Host ! {finished_gossip},
     io:fwrite("~w heard rumor ~p times~n", [From, 10]),
-    exit(SendNode, "Heard rumor 10 times."), % kill propagate_rumor
+    %exit(SendNode, "Heard rumor 10 times."), % kill propagate_rumor
     exit(self(), "Heard rumor 10 times.");
 gossip_node(Host, From, Rumor, SendNode) ->
     receive
