@@ -18,17 +18,16 @@ chord_ring(NodeList)->
       Node_Name = create_Node(),
       Temp = "node_" ++ integer_to_list(Node_Name),
       Key = list_to_atom(Temp),
-      Key ! {create, []},
+      Key ! {create, Node_Name},
       NewNodeList = lists:append([Node_Name], NodeList),
       chord_ring(NewNodeList),
       io:fwrite("Key: ~p ~n",[Key]);
-
 
     join ->
       Node_Name = create_Node(),
       Temp = "node_" ++ integer_to_list(Node_Name),
       Key = list_to_atom(Temp),
-      Key ! {join, []},
+      Key ! {join, Node_Name},
       NewNodeList = lists:append([Node_Name], NodeList),
       chord_ring(NewNodeList),
       io:fwrite("Key: ~p ~n",[Key])
@@ -41,25 +40,16 @@ start(NumberNodes, NumberRequests)->
   chord_ring ! create,
   loop_join(NumberNodes-1).
 
-
-
-%%  spawn_node(NumberNodes, X, NumberRequests,[]).
-  
-chord_node()->
-  io:fwrite("PiD: ~p ~n",[self()]).
-%%  chord_node().
-
-
 pot(1) -> 2;
 
 pot(N) -> 2*pot(N-1).
 
 node() ->
   receive
-    {create,NodeList} -> io:fwrite("create hereee ~n");
-    {join, NodeList} -> io:fwrite("join hereee ~n")
+    {create,NodeID} ->
+      io:fwrite("create hereee ~p ~n",[NodeID]);
+    {join, NodeID} -> io:fwrite("join hereee ~p ~n", [NodeID])
   end.
-
 
 create_Node() ->
   X = pot(?M),
