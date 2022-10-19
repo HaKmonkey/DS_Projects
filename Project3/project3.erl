@@ -27,7 +27,8 @@ chord_ring(NodeList)->
       Temp = "node_" ++ integer_to_list(Node_Name),
       Key = list_to_atom(Temp),
       Join_ID = shuffle(NodeList),
-      Key ! {join, Node_Name , Join_ID},
+      Key ! {join, Node_Name},
+      getNodeName(Join_ID) ! {join, Join_ID, Node_Name},
       NewNodeList = lists:append([Node_Name], NodeList),
       chord_ring(NewNodeList)
 
@@ -37,6 +38,7 @@ chord_ring(NodeList)->
 start(NumberNodes, NumberRequests)->
   register(chord_ring, spawn(?MODULE, chord_ring,[[]])),
   chord_ring ! create,
+  timer:sleep(500),
   loop_join(NumberNodes-1).
 
 pot(1) -> 2;
@@ -44,21 +46,26 @@ pot(1) -> 2;
 pot(N) -> 2*pot(N-1).
 
 node(NID, Successor, Predecessor, Fingertable) ->
+  io:fwrite("successor test: ~p ~n",[Successor]),
   receive
     {create,NodeID} ->
       New_Predecessor = nil,
       New_Successor = NodeID,
-      node(NodeID, New_Successor, New_Predecessor, []);
-    {join, NodeID, JoinId} ->
+      io:fwrite("~p ~n",[NodeID]),
+      node(NodeID, NodeID, New_Predecessor, []);
+    {join, NewId} ->
       New_Predecessor = nil,
+      io:fwrite("test: ~p ~p ~p ~n",[NewId, Successor]),
       if
-        (JoinId > NodeID and JoinId < Successor) ->
-          New_Successor = Successor,
-          node(NodeID, New_Successor, Predecessor, Fingertable);
-        true -> getNodeName(Successor) ! {join, Successor, JoinId}
-      end,
-
-      io:fwrite("join hereee ~p ~n", [JoinId])
+        (NewId > NID and NewId < Successor) ->
+          getNodeName(NewId) ! {NID, Successor};
+        (NID == Successor) ->
+          getNodeName(NewId) ! {NewId, NID};
+        true -> getNodeName(Successor) ! {join, NewId}
+      end;
+    {join, NodeID, New_Successor} ->
+      NID = NodeID,
+      node(NID, New_Successor, Predecessor, Fingertable)
   end.
 
 create_Node() ->
@@ -75,6 +82,7 @@ loop_join(0) ->
 
 loop_join(NumberNodesN) ->
   chord_ring ! join,
+  timer:sleep(500),
   loop_join(NumberNodesN - 1).
 
 shuffle(List) ->
