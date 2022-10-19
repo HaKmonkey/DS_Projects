@@ -1,85 +1,48 @@
-%%%-------------------------------------------------------------------
-%%% @author yuhong
-%%% @copyright (C) 2022, <COMPANY>
-%%% @doc
-%%%
-%%% @end
-%%% Created : 18. Oct 2022 4:14 PM
-%%%-------------------------------------------------------------------
 -module(project3).
--author("yuhong").
--include("tools.hrl").
-%% API
--export([start/2, pot/1, node/4, chord_ring/1, loop_join/1, shuffle/1, getNodeName/1]).
 
-chord_ring(NodeList)->
-  receive
-    create ->
-      Node_Name = create_Node(),
-      Temp = "node_" ++ integer_to_list(Node_Name),
-      Key = list_to_atom(Temp),
-      Key ! {create, Node_Name},
-      NewNodeList = lists:append([Node_Name], NodeList),
-      chord_ring(NewNodeList);
+- export([start/2, chord_node/0]).
 
-    join ->
-      Node_Name = create_Node(),
-      Temp = "node_" ++ integer_to_list(Node_Name),
-      Key = list_to_atom(Temp),
-      Join_ID = shuffle(NodeList),
-      Key ! {join, Node_Name , Join_ID},
-      NewNodeList = lists:append([Node_Name], NodeList),
-      chord_ring(NewNodeList)
+chord_node() ->
+    Id = io_lib:format(
+        "~64.16.0b",[
+            binary:decode_unsigned(
+                crypto:hash(
+                    sha3_256,
+                    erlang:pid_to_list(self())
+                )
+            )
+        ]
+    ), % node id from hashed ip; here we use sha256 instead of sha1
+    % get message about finding successor - given id
+    io:fwrite("~p~n", [Id]).
 
-  end.
+% make_chord_ring() ->
+%     done.
 
+spawn_node(0) ->
+    done;
+spawn_node(I) when I > 0 ->
+    Pid = spawn(?MODULE, chord_node, []),
+    Id = io_lib:format(
+        "~64.16.0b",[
+            binary:decode_unsigned(
+                crypto:hash(
+                    sha3_256,
+                    erlang:pid_to_list(Pid)
+                )
+            )
+        ]
+    ),
+    % global:register_name(Id, Pid),
+    % Gpid = global:whereis_name(Id),
+    io:format("ID: ~p~n",[Id]),
+    spawn_node(I-1).
 
-start(NumberNodes, NumberRequests)->
-  register(chord_ring, spawn(?MODULE, chord_ring,[[]])),
-  chord_ring ! create,
-  loop_join(NumberNodes-1).
-
-pot(1) -> 2;
-
-pot(N) -> 2*pot(N-1).
-
-node(NID, Successor, Predecessor, Fingertable) ->
-  receive
-    {create,NodeID} ->
-      New_Predecessor = nil,
-      New_Successor = NodeID,
-      node(NodeID, New_Successor, New_Predecessor, []);
-    {join, NodeID, JoinId} ->
-      New_Predecessor = nil,
-      if
-        (JoinId > NodeID and JoinId < Successor) ->
-          New_Successor = Successor,
-          node(NodeID, New_Successor, Predecessor, Fingertable);
-        true -> getNodeName(Successor) ! {join, Successor, JoinId}
-      end,
-
-      io:fwrite("join hereee ~p ~n", [JoinId])
-  end.
-
-create_Node() ->
-  X = pot(?M),
-  Pid = spawn(?MODULE, node, [nil,nil,nil,[]]),
-  <<Hash:160>> = crypto:hash(sha, pid_to_list(Pid)),
-  Key_Hash = Hash rem X,
-  Temp = "node_" ++ integer_to_list(Key_Hash),
-  register(list_to_atom(Temp),Pid),
-  Key_Hash.
-
-loop_join(0) ->
-  ok;
-
-loop_join(NumberNodesN) ->
-  chord_ring ! join,
-  loop_join(NumberNodesN - 1).
-
-shuffle(List) ->
-  lists:nth(rand:uniform(length(List)), List).
-
-getNodeName(NodeID)->
-  list_to_atom("node_" ++ integer_to_list(NodeID)).
-
+% NumNodes is the number of nodes to generate
+% NumRequests is the number of requests each node will make
+start(NumNodes, NumRequests) ->
+    M = erlang:trunc(math:ceil(math:sqrt(NumNodes))),
+    ChordSize = erlang:trunc(math:pow(2, M)),
+    io:fwrite("M: ~p   Chord: ~p   Requests: ~p~n", [M, ChordSize, NumRequests]),
+    % persistent_term:put(nodes, dict:new()),
+    spawn_node(NumNodes).
