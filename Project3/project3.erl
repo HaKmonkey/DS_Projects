@@ -10,7 +10,7 @@
 -author("yuhong").
 -include("tools.hrl").
 %% API
--export([start/2, pot/1, node/0, chord_ring/1, loop_join/1]).
+-export([start/2, pot/1, node/4, chord_ring/1, loop_join/1, shuffle/1, getNodeName/1]).
 
 chord_ring(NodeList)->
   receive
@@ -20,17 +20,16 @@ chord_ring(NodeList)->
       Key = list_to_atom(Temp),
       Key ! {create, Node_Name},
       NewNodeList = lists:append([Node_Name], NodeList),
-      chord_ring(NewNodeList),
-      io:fwrite("Key: ~p ~n",[Key]);
+      chord_ring(NewNodeList);
 
     join ->
       Node_Name = create_Node(),
       Temp = "node_" ++ integer_to_list(Node_Name),
       Key = list_to_atom(Temp),
-      Key ! {join, Node_Name},
+      Join_ID = shuffle(NodeList),
+      Key ! {join, Node_Name , Join_ID},
       NewNodeList = lists:append([Node_Name], NodeList),
-      chord_ring(NewNodeList),
-      io:fwrite("Key: ~p ~n",[Key])
+      chord_ring(NewNodeList)
 
   end.
 
@@ -44,16 +43,27 @@ pot(1) -> 2;
 
 pot(N) -> 2*pot(N-1).
 
-node() ->
+node(NID, Successor, Predecessor, Fingertable) ->
   receive
     {create,NodeID} ->
-      io:fwrite("create hereee ~p ~n",[NodeID]);
-    {join, NodeID} -> io:fwrite("join hereee ~p ~n", [NodeID])
+      New_Predecessor = nil,
+      New_Successor = NodeID,
+      node(NodeID, New_Successor, New_Predecessor, []);
+    {join, NodeID, JoinId} ->
+      New_Predecessor = nil,
+      if
+        (JoinId > NodeID and JoinId < Successor) ->
+          New_Successor = Successor,
+          node(NodeID, New_Successor, Predecessor, Fingertable);
+        true -> getNodeName(Successor) ! {join, Successor, JoinId}
+      end,
+
+      io:fwrite("join hereee ~p ~n", [JoinId])
   end.
 
 create_Node() ->
   X = pot(?M),
-  Pid = spawn(?MODULE, node, []),
+  Pid = spawn(?MODULE, node, [nil,nil,nil,[]]),
   <<Hash:160>> = crypto:hash(sha, pid_to_list(Pid)),
   Key_Hash = Hash rem X,
   Temp = "node_" ++ integer_to_list(Key_Hash),
@@ -66,3 +76,10 @@ loop_join(0) ->
 loop_join(NumberNodesN) ->
   chord_ring ! join,
   loop_join(NumberNodesN - 1).
+
+shuffle(List) ->
+  lists:nth(rand:uniform(length(List)), List).
+
+getNodeName(NodeID)->
+  list_to_atom("node_" ++ integer_to_list(NodeID)).
+
