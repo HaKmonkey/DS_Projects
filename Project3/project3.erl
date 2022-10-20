@@ -29,7 +29,6 @@ chord_ring(NodeList)->
       Key = list_to_atom(Temp),
       Join_ID = shuffle(NodeList),
       Test = getNodeName(Join_ID),
-      io:fwrite("Join ID ~p ~n",[Test]),
       getNodeName(Join_ID) ! {join, Node_Name},
       NewNodeList = lists:append([Node_Name], NodeList),
       chord_ring(NewNodeList)
@@ -48,7 +47,7 @@ pot(1) -> 2;
 pot(N) -> 2*pot(N-1).
 
 node(NID, Successor, Predecessor, Fingertable) ->
-  io:fwrite("successor test: ~p ~n",[Successor]),
+  io:fwrite("Curr Node ID: ~p ,Curr Node Successor ~p , Curr Node Predecessor ~p ~n",[NID, Successor, Predecessor]),
   receive
     {create,NodeID} ->
       New_Predecessor = nil,
@@ -59,15 +58,24 @@ node(NID, Successor, Predecessor, Fingertable) ->
       New_Predecessor = nil,
       io:fwrite("old node info : ~p ~p ~p ~n",[NewId, Successor, NID]),
       if
+        %% If current in_ring node's successor is larger than new node, then we return the successor
         (NewId > NID) and (Successor > NewId ) ->
-          getNodeName(NewId) ! {NID, Successor};
+          getNodeName(NewId) ! {join, NewId, Successor},
+          node(NID,Successor,Predecessor,Fingertable);
+        %% This situation only happened when we only have one node in the chord ring
         (NID == Successor) ->
-          getNodeName(NewId) ! {join, NewId, NID};
+          getNodeName(NewId) ! {join, NewId, NID},
+          node(NID,Successor,Predecessor,Fingertable);
+        %% there is one more situation that NewId is larger than all NID in this ring, Then we should add it to the last.
         true -> getNodeName(Successor) ! {join, NewId}
       end;
     {join, NodeID, New_Successor} ->
       io:fwrite("New Node: ~p ~p ~n",[NodeID, New_Successor]),
-      node(NodeID, New_Successor, Predecessor, Fingertable)
+      node(NodeID, New_Successor, Predecessor, Fingertable);
+    {stablize} ->
+      io:fwrite("stablize");
+    {notify} ->
+      io:fwrite("notify")
   end.
 
 create_Node() ->
@@ -76,7 +84,6 @@ create_Node() ->
   <<Hash:160>> = crypto:hash(sha, pid_to_list(Pid)),
   Key_Hash = Hash rem X,
   Temp = "node_" ++ integer_to_list(Key_Hash),
-  io:fwrite("create node test: ~p ~p ~n",[Temp, Pid]),
   register(list_to_atom(Temp),Pid),
   Key_Hash.
 
