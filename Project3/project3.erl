@@ -19,6 +19,7 @@ chord_ring(NodeList)->
       Temp = "node_" ++ integer_to_list(Node_Name),
       Key = list_to_atom(Temp),
       Key ! {create, Node_Name},
+      io:fwrite("Key: ~p ~n",[Key]),
       NewNodeList = lists:append([Node_Name], NodeList),
       chord_ring(NewNodeList);
 
@@ -27,8 +28,9 @@ chord_ring(NodeList)->
       Temp = "node_" ++ integer_to_list(Node_Name),
       Key = list_to_atom(Temp),
       Join_ID = shuffle(NodeList),
-      Key ! {join, Node_Name},
-      getNodeName(Join_ID) ! {join, Join_ID, Node_Name},
+      Test = getNodeName(Join_ID),
+      io:fwrite("Join ID ~p ~n",[Test]),
+      getNodeName(Join_ID) ! {join, Node_Name},
       NewNodeList = lists:append([Node_Name], NodeList),
       chord_ring(NewNodeList)
 
@@ -55,17 +57,17 @@ node(NID, Successor, Predecessor, Fingertable) ->
       node(NodeID, NodeID, New_Predecessor, []);
     {join, NewId} ->
       New_Predecessor = nil,
-      io:fwrite("test: ~p ~p ~p ~n",[NewId, Successor]),
+      io:fwrite("old node info : ~p ~p ~p ~n",[NewId, Successor, NID]),
       if
-        (NewId > NID and NewId < Successor) ->
+        (NewId > NID) and (Successor > NewId ) ->
           getNodeName(NewId) ! {NID, Successor};
         (NID == Successor) ->
-          getNodeName(NewId) ! {NewId, NID};
+          getNodeName(NewId) ! {join, NewId, NID};
         true -> getNodeName(Successor) ! {join, NewId}
       end;
     {join, NodeID, New_Successor} ->
-      NID = NodeID,
-      node(NID, New_Successor, Predecessor, Fingertable)
+      io:fwrite("New Node: ~p ~p ~n",[NodeID, New_Successor]),
+      node(NodeID, New_Successor, Predecessor, Fingertable)
   end.
 
 create_Node() ->
@@ -74,6 +76,7 @@ create_Node() ->
   <<Hash:160>> = crypto:hash(sha, pid_to_list(Pid)),
   Key_Hash = Hash rem X,
   Temp = "node_" ++ integer_to_list(Key_Hash),
+  io:fwrite("create node test: ~p ~p ~n",[Temp, Pid]),
   register(list_to_atom(Temp),Pid),
   Key_Hash.
 
