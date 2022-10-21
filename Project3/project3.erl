@@ -28,8 +28,15 @@ make_finger_table(I, M, Id, FingerTable) when I < M ->
     NewFingerTable = lists:append([{Step, NextNode}], FingerTable),
     make_finger_table(I+1, M, Id, NewFingerTable).
 
+% wrap_id(Id) ->
+%     if 
+%         TempRK < 0 ->
+%             WrappedTempRK = TempRK + 64;
+%         true ->
+%             WrappedTempRK = TempRK
+%     end,
+
 make_request(Id, M, FingerTable, RequestKey, TempRK, Pid, NumJumps) ->
-    ChordSize = erlang:trunc(math:pow(2, M)),
     if 
         TempRK < 0 ->
             WrappedTempRK = TempRK + 64;
@@ -40,23 +47,17 @@ make_request(Id, M, FingerTable, RequestKey, TempRK, Pid, NumJumps) ->
     if
         RequestNode == false ->
             make_request(Id, M, FingerTable, RequestKey, WrappedTempRK - 1, Pid, NumJumps);
-        TempRK == Id ->
-            LastStep = erlang:trunc(Id + math:pow(2, M-1)) rem ChordSize,
-            LastNode = lists:keyfind(LastStep, 1, FingerTable),
-            io:fwrite("Id: ~p Key: ~p LastStep: ~p LastNode: ~p~n",[Id, RequestKey, LastStep, LastNode]),
-            {AssumedId, LastNodePid} = LastNode,
-            LastNodePid ! {forwarding_request, Pid, RequestKey, NumJumps + 1, AssumedId};
         true ->
             {AssumedId, RequestNodePid} = RequestNode,
             io:fwrite("~p jumped to ~p~n", [Id, RequestNodePid]),
             RequestNodePid ! {forwarding_request, Pid, RequestKey, NumJumps + 1, AssumedId}
     end.
 
-successor_list(_, _, _, SList, 0) ->
+successor_list(_, _, SList, 0) ->
     SList;
-successor_list(ChordSize, AssumedId, Id, SList, X) ->
+successor_list(ChordSize, AssumedId, SList, X) ->
     NewSList = lists:append([AssumedId rem ChordSize], SList),
-    successor_list(ChordSize, AssumedId+1, Id, NewSList, X-1).
+    successor_list(ChordSize, AssumedId+1, NewSList, X-1).
 
 chord_node(M, FingerTable) ->
     Id = get_id(self(), M),
@@ -80,11 +81,19 @@ chord_node(M, FingerTable) ->
             if
                 Id == RequestKey ->
                     self() ! {give_key, Pid, RequestKey, NumJumps};
-                Id > AssumedId, RequestKey =< Id ->
-                    self() ! {give_key, Pid, RequestKey, NumJumps};
+                Id > AssumedId ->
+                    X = (Id - AssumedId) + 1,
+                    SList = successor_list(ChordSize, AssumedId, [], X),
+                    Member = lists:member(RequestKey, SList),
+                    if
+                        Member == true ->
+                            self() ! {give_key, Pid, RequestKey, NumJumps};
+                        true ->
+                            make_request(Id, M, FingerTable, RequestKey, RequestKey, Pid, NumJumps)
+                    end;
                 Id < AssumedId ->
                     X = ((Id + ChordSize) - AssumedId) + 1,
-                    SList = successor_list(ChordSize, AssumedId, Id, [], X),
+                    SList = successor_list(ChordSize, AssumedId, [], X),
                     Member = lists:member(RequestKey, SList),
                     if
                         Member == true ->
@@ -113,8 +122,6 @@ spawn_node(NumNodes, M) when NumNodes > 0 ->
     chord_ring ! {update_node_list, Id, Pid},
     spawn_node(NumNodes - 1, M).
 
-% the server is here just to manage the initalization of everything
-% server will manage a list of PIDs to IDs instead of registering to atoms
 update_nodes(NodeList) ->
     Fun = fun(Pid) -> Pid ! update end,
     lists:keymap(Fun, 2, NodeList).
