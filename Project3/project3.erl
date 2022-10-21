@@ -1,103 +1,131 @@
-%%%-------------------------------------------------------------------
-%%% @author yuhong
-%%% @copyright (C) 2022, <COMPANY>
-%%% @doc
-%%%
-%%% @end
-%%% Created : 18. Oct 2022 4:14 PM
-%%%-------------------------------------------------------------------
 -module(project3).
--author("yuhong").
+
 -include("tools.hrl").
-%% API
--export([start/2, pot/1, node/4, chord_ring/1, loop_join/1, shuffle/1, getNodeName/1]).
+-export([start/2, server/1, chord_node/3, loopsearch/4, loop_node/2]).
 
-chord_ring(NodeList)->
+get_id(Pid, M) ->
+  Hash = binary:decode_unsigned(crypto:hash(sha256,erlang:pid_to_list(Pid))),
+  Hash rem erlang:trunc(math:pow(2,M)).
+
+resolve_chord_id(Id, ChordSize, Step) ->
+  chord_ring ! {resolve_pid, self(), Step},
   receive
-    create ->
-      Node_Name = create_Node(),
-      Temp = "node_" ++ integer_to_list(Node_Name),
-      Key = list_to_atom(Temp),
-      Key ! {create, Node_Name},
-      io:fwrite("Key: ~p ~n",[Key]),
-      NewNodeList = lists:append([Node_Name], NodeList),
-      chord_ring(NewNodeList);
-
-    join ->
-      Node_Name = create_Node(),
-      Temp = "node_" ++ integer_to_list(Node_Name),
-      Key = list_to_atom(Temp),
-      Join_ID = shuffle(NodeList),
-      Test = getNodeName(Join_ID),
-      getNodeName(Join_ID) ! {join, Node_Name},
-      NewNodeList = lists:append([Node_Name], NodeList),
-      chord_ring(NewNodeList)
-
-  end.
-
-
-start(NumberNodes, NumberRequests)->
-  register(chord_ring, spawn(?MODULE, chord_ring,[[]])),
-  chord_ring ! create,
-  timer:sleep(500),
-  loop_join(NumberNodes-1).
-
-pot(1) -> 2;
-
-pot(N) -> 2*pot(N-1).
-
-node(NID, Successor, Predecessor, Fingertable) ->
-  io:fwrite("Curr Node ID: ~p ,Curr Node Successor ~p , Curr Node Predecessor ~p ~n",[NID, Successor, Predecessor]),
-  receive
-    {create,NodeID} ->
-      New_Predecessor = nil,
-      New_Successor = NodeID,
-      io:fwrite("~p ~n",[NodeID]),
-      node(NodeID, NodeID, New_Predecessor, []);
-    {join, NewId} ->
-      New_Predecessor = nil,
-      io:fwrite("old node info : ~p ~p ~p ~n",[NewId, Successor, NID]),
+    {id_result, NextNode} ->
       if
-        %% If current in_ring node's successor is larger than new node, then we return the successor
-        (NewId > NID) and (Successor > NewId ) ->
-          getNodeName(NewId) ! {join, NewId, Successor},
-          node(NID,Successor,Predecessor,Fingertable);
-        %% This situation only happened when we only have one node in the chord ring
-        (NID == Successor) ->
-          getNodeName(NewId) ! {join, NewId, NID},
-          node(NID,Successor,Predecessor,Fingertable);
-        %% there is one more situation that NewId is larger than all NID in this ring, Then we should add it to the last.
-        true -> getNodeName(Successor) ! {join, NewId}
-      end;
-    {join, NodeID, New_Successor} ->
-      io:fwrite("New Node: ~p ~p ~n",[NodeID, New_Successor]),
-      node(NodeID, New_Successor, Predecessor, Fingertable);
-    {stablize} ->
-      io:fwrite("stablize");
-    {notify} ->
-      io:fwrite("notify")
+        NextNode == false ->
+          resolve_chord_id(Id, ChordSize, Step + 1 rem ChordSize);
+        true ->
+          {_, NextNodePid} = NextNode,
+          NextNodePid
+      end
   end.
 
-create_Node() ->
-  X = pot(?M),
-  Pid = spawn(?MODULE, node, [nil,nil,nil,[]]),
-  <<Hash:160>> = crypto:hash(sha, pid_to_list(Pid)),
-  Key_Hash = Hash rem X,
-  Temp = "node_" ++ integer_to_list(Key_Hash),
-  register(list_to_atom(Temp),Pid),
-  Key_Hash.
+make_finger_table(I, M, _, FingerTable) when I == M ->
+  lists:sort(FingerTable);
+make_finger_table(I, M, Id, FingerTable) when I < M ->
+  ChordSize = erlang:trunc(math:pow(2, M)),
+  Step = erlang:trunc(Id + math:pow(2, I)),
+  NextNode = resolve_chord_id(Id, ChordSize, Step rem ChordSize),
+  NewFingerTable = lists:append([{Step, NextNode}], FingerTable),
+  make_finger_table(I+1, M, Id, NewFingerTable).
 
-loop_join(0) ->
+chord_node(M, FingerTable, NumRequests) ->
+  Id = get_id(self(), M),
+  receive
+    print_self ->
+      io:fwrite("~p   ~p   ~p~n", [self(), Id, FingerTable]),
+      NewFingerTable = FingerTable;
+    update ->
+      NewFingerTable = make_finger_table(0, M, Id, []);
+    {start_lookup, Key} ->
+      if
+        Key -> ;
+        true -> 
+      end
+      io:fwrite("start look up: ~p   ~p   ~p ~p ~n", [self(), Id, FingerTable, NumRequests]),
+      NewFingerTable = FingerTable;
+  end,
+  chord_node(M, NewFingerTable, NumRequests).
+
+spawn_node(0, _, NumRequests) ->
+  chord_ring ! {finished_spawning, NumRequests};
+spawn_node(NumNodes, M, NumRequests) when NumNodes > 0 ->
+  Pid = spawn(?MODULE, chord_node, [M, [], NumRequests]),
+  Id = get_id(Pid, M),
+  chord_ring ! {update_node_list, Id, Pid},
+  spawn_node(NumNodes - 1, M, NumRequests).
+
+% the server is here just to manage the initalization of everything
+% server will manage a list of PIDs to IDs instead of registering to atoms
+update_nodes(NodeList) ->
+  Fun = fun(Pid) -> Pid ! update end,
+  lists:keymap(Fun, 2, NodeList).
+
+server(NodeList) ->
+  receive
+    {spawn_nodes, NumNodes, M, NumRequests} ->
+      spawn_node(NumNodes, M, NumRequests),
+      NewNodeList = NodeList;
+    {update_node_list, Id, Pid} ->
+      NewNodeList = lists:append([{Id, Pid}], NodeList),
+      update_nodes(NewNodeList);
+    {resolve_pid, From, Step} ->
+      From ! {id_result, lists:keyfind(Step, 1, NodeList)},
+      NewNodeList = NodeList;
+    {finished_spawning, NumRequests} ->
+      io:fwrite("finished spawning   ~p ~p ~n", [NodeList, NumRequests]),
+      loop_node(NodeList, length(NodeList)),
+      NewNodeList = NodeList
+  end,
+  server(NewNodeList).
+
+% NumRequests is the number of requests each node will make
+% TODO should be able to insert or remove nodes now
+% TODO need to make sure to pass NumRequests as well
+%% Nodes should make requests and tell us how many jumps were needed
+start(NumNodes, NumRequests) ->
+  % M = erlang:trunc(math:ceil(math:sqrt(NumNodes))),
+  M = 6,
+  io:fwrite("M: ~p   Requests: ~p~n", [M, NumRequests]),
+  register(chord_ring, spawn(?MODULE, server, [[]])),
+  chord_ring ! {spawn_nodes, NumNodes, M, NumRequests}.
+
+loop_node(NodeList, 0) ->
+  ok;
+loop_node(NodeList, Size) when Size > 0->
+  New_ID = element(2,lists:nth(Size, NodeList)),
+  Temp = erlang:trunc(math:pow(2, ?M)),
+  Key = random:uniform(Temp),
+  New_ID ! {start_lookup, Key},
+  loop_node(NodeList, Size - 1).
+
+loopsearch(0, _, _, _) -> ok;
+
+loopsearch(NumRequests, FingerTable, ID, Target) when NumRequests > 0->
+  Temp = erlang:trunc(math:pow(2, ?M)),
+  if
+    Target < ID -> New_Target = Target + Temp;
+    true -> New_Target = Target
+  end,
+  FingerMaps = maps:from_list(FingerTable),
+  FingerKeys = maps:keys(FingerMaps),
+  LastKey = looptable(FingerKeys,length(FingerKeys), New_Target),
+  maps:get(LastKey, FingerMaps) ! {keep_loopup, Target},
+  io:fwrite("FingerKeys ~p, ID ~p , target ~p ~n",[LastKey, ID, Target]),
+  loopsearch(NumRequests - 1, FingerTable, ID, Target).
+
+looptable(FingerKeys, 0, NewTarget) ->
   ok;
 
-loop_join(NumberNodesN) ->
-  chord_ring ! join,
-  timer:sleep(500),
-  loop_join(NumberNodesN - 1).
 
-shuffle(List) ->
-  lists:nth(rand:uniform(length(List)), List).
+looptable(FingerKeys, Curr_Index, NewTarget) when Curr_Index > 1 ->
+  LastKey = lists:nth(Curr_Index, FingerKeys),
+  SecondKey = lists:nth(Curr_Index - 1 , FingerKeys),
+  if
 
-getNodeName(NodeID)->
-  list_to_atom("node_" ++ integer_to_list(NodeID)).
-
+    (Curr_Index == length(FingerKeys)) and (NewTarget > LastKey) -> LastKey;
+    true -> if
+              (NewTarget =< LastKey) and (NewTarget > SecondKey) -> SecondKey;
+              true -> looptable(FingerKeys, Curr_Index-1, NewTarget)
+            end
+  end.
