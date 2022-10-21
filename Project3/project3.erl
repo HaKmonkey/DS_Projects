@@ -1,6 +1,6 @@
 -module(project3).
 
--export([start/2, server/1, chord_node/2]).
+-export([start/2, server/2, chord_node/2]).
 
 get_id(Pid, M) ->
     Hash = binary:decode_unsigned(crypto:hash(sha256,erlang:pid_to_list(Pid))),
@@ -12,30 +12,96 @@ resolve_chord_id(Id, ChordSize, Step) ->
         {id_result, NextNode} ->
             if
                 NextNode == false ->
-                    resolve_chord_id(Id, ChordSize, Step + 1 rem ChordSize);
+                    resolve_chord_id(Id, ChordSize, (Step + 1) rem ChordSize);
                 true ->
                     {_, NextNodePid} = NextNode,
                     NextNodePid
             end
     end.
 
-make_finger_table(I, M, _, FingerTable) when I == M-1 ->
+make_finger_table(I, M, _, FingerTable) when I == M ->
     lists:sort(FingerTable);
 make_finger_table(I, M, Id, FingerTable) when I < M ->
     ChordSize = erlang:trunc(math:pow(2, M)),
-    Step = erlang:trunc(Id + math:pow(2, I)),
-    NextNode = resolve_chord_id(Id, ChordSize, Step rem ChordSize),
+    Step = erlang:trunc(Id + math:pow(2, I)) rem ChordSize,
+    NextNode = resolve_chord_id(Id, ChordSize, Step),
     NewFingerTable = lists:append([{Step, NextNode}], FingerTable),
     make_finger_table(I+1, M, Id, NewFingerTable).
 
+make_request(Id, M, FingerTable, RequestKey, TempRK, Pid, NumJumps) ->
+    ChordSize = erlang:trunc(math:pow(2, M)),
+    if 
+        TempRK < 0 ->
+            WrappedTempRK = TempRK + 64;
+        true ->
+            WrappedTempRK = TempRK
+    end,
+    RequestNode = lists:keyfind(WrappedTempRK, 1, FingerTable),
+    if
+        RequestNode == false ->
+            make_request(Id, M, FingerTable, RequestKey, WrappedTempRK - 1, Pid, NumJumps);
+        TempRK == Id ->
+            LastStep = erlang:trunc(Id + math:pow(2, M-1)) rem ChordSize,
+            LastNode = lists:keyfind(LastStep, 1, FingerTable),
+            io:fwrite("Id: ~p Key: ~p LastStep: ~p LastNode: ~p~n",[Id, RequestKey, LastStep, LastNode]),
+            {AssumedId, LastNodePid} = LastNode,
+            LastNodePid ! {forwarding_request, Pid, RequestKey, NumJumps + 1, AssumedId};
+        true ->
+            {AssumedId, RequestNodePid} = RequestNode,
+            io:fwrite("~p jumped to ~p~n", [Id, RequestNodePid]),
+            RequestNodePid ! {forwarding_request, Pid, RequestKey, NumJumps + 1, AssumedId}
+    end.
+
+successor_list(_, _, _, SList, 0) ->
+    SList;
+successor_list(ChordSize, AssumedId, Id, SList, X) ->
+    NewSList = lists:append([AssumedId rem ChordSize], SList),
+    successor_list(ChordSize, AssumedId+1, Id, NewSList, X-1).
+
 chord_node(M, FingerTable) ->
     Id = get_id(self(), M),
+    ChordSize = erlang:trunc(math:pow(2, M)),
     receive
         print_self ->
             io:fwrite("~p   ~p   ~p~n", [self(), Id, FingerTable]),
             NewFingerTable = FingerTable;
         update ->
-            NewFingerTable = make_finger_table(0, M, Id, [])
+            NewFingerTable = make_finger_table(0, M, Id, []);
+        request ->
+            RequestKey = rand:uniform(ChordSize) - 1,
+            if
+                Id == RequestKey ->
+                    self() ! {accept_key, RequestKey, 0};
+                true ->
+                    make_request(Id, M, FingerTable, RequestKey, RequestKey, self(), 0)
+            end,
+            NewFingerTable = FingerTable;
+        {forwarding_request, Pid, RequestKey, NumJumps, AssumedId} ->
+            if
+                Id == RequestKey ->
+                    self() ! {give_key, Pid, RequestKey, NumJumps};
+                Id > AssumedId, RequestKey =< Id ->
+                    self() ! {give_key, Pid, RequestKey, NumJumps};
+                Id < AssumedId ->
+                    X = ((Id + ChordSize) - AssumedId) + 1,
+                    SList = successor_list(ChordSize, AssumedId, Id, [], X),
+                    Member = lists:member(RequestKey, SList),
+                    if
+                        Member == true ->
+                            self() ! {give_key, Pid, RequestKey, NumJumps};
+                        true ->
+                            make_request(Id, M, FingerTable, RequestKey, RequestKey, Pid, NumJumps)
+                    end;
+                true ->
+                    make_request(Id, M, FingerTable, RequestKey, RequestKey, Pid, NumJumps)
+            end,
+            NewFingerTable = FingerTable;
+        {accept_key, RequestKey, NumJumps} ->
+            io:fwrite("~p requested ~p and got in ~p jumps~n", [self(), RequestKey, NumJumps]),
+            NewFingerTable = FingerTable;
+        {give_key, Pid, RequestKey, NumJumps} ->
+            Pid ! {accept_key, RequestKey, NumJumps},
+            NewFingerTable = FingerTable
     end,
     chord_node(M, NewFingerTable).
 
@@ -53,7 +119,14 @@ update_nodes(NodeList) ->
     Fun = fun(Pid) -> Pid ! update end,
     lists:keymap(Fun, 2, NodeList).
 
-server(NodeList) ->
+start_requests(_, 0) ->
+    chord_ring ! finished_requests;
+start_requests(NodeList, NumRequests) ->
+    Fun = fun(Pid) -> Pid ! request end,
+    lists:keymap(Fun, 2, NodeList),
+    start_requests(NodeList, NumRequests - 1).
+
+server(NodeList, NumRequests) ->
     receive
         {spawn_nodes, NumNodes, M} ->
             spawn_node(NumNodes, M),
@@ -66,17 +139,18 @@ server(NodeList) ->
             NewNodeList = NodeList;
         finished_spawning ->
             io:fwrite("finished spawning   ~p~n", [NodeList]),
+            timer:sleep(0500),
+            start_requests(NodeList, NumRequests),
+            NewNodeList = NodeList;
+        finished_requests ->
+            io:fwrite("finished requests~n"),
             NewNodeList = NodeList
     end,
-    server(NewNodeList).
+    server(NewNodeList, NumRequests).
 
-% NumRequests is the number of requests each node will make
 % TODO should be able to insert or remove nodes now
-% TODO need to make sure to pass NumRequests as well
-%% Nodes should make requests and tell us how many jumps were needed
 start(NumNodes, NumRequests) ->
     % M = erlang:trunc(math:ceil(math:sqrt(NumNodes))),
     M = 6,
-    io:fwrite("M: ~p   Requests: ~p~n", [M, NumRequests]),
-    register(chord_ring, spawn(?MODULE, server, [[]])),
+    register(chord_ring, spawn(?MODULE, server, [[], NumRequests])),
     chord_ring ! {spawn_nodes, NumNodes, M}.
