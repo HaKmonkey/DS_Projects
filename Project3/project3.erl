@@ -28,21 +28,14 @@ make_finger_table(I, M, Id, FingerTable) when I < M ->
     NewFingerTable = lists:append([{Step, NextNode}], FingerTable),
     make_finger_table(I+1, M, Id, NewFingerTable).
 
-% wrap_id(Id) ->
-%     if 
-%         TempRK < 0 ->
-%             WrappedTempRK = TempRK + 64;
-%         true ->
-%             WrappedTempRK = TempRK
-%     end,
+wrap_id(Id) ->
+    if 
+        Id < 0 -> Id + 64;
+        true -> Id
+    end.
 
 make_request(Id, M, FingerTable, RequestKey, TempRK, Pid, NumJumps) ->
-    if 
-        TempRK < 0 ->
-            WrappedTempRK = TempRK + 64;
-        true ->
-            WrappedTempRK = TempRK
-    end,
+    WrappedTempRK = wrap_id(TempRK),
     RequestNode = lists:keyfind(WrappedTempRK, 1, FingerTable),
     if
         RequestNode == false ->
