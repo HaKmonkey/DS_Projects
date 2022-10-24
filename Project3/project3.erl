@@ -1,6 +1,6 @@
 -module(project3).
 
--export([start/2, server/2, chord_node/2]).
+-export([start/2, server/3, chord_node/2]).
 
 get_id(Pid, M) ->
     Hash = binary:decode_unsigned(crypto:hash(sha256,erlang:pid_to_list(Pid))),
@@ -99,7 +99,9 @@ chord_node(M, FingerTable) ->
             end,
             NewFingerTable = FingerTable;
         {accept_key, RequestKey, NumJumps} ->
-            io:fwrite("~p requested ~p and got in ~p jumps~n", [self(), RequestKey, NumJumps]),
+            io:fwrite("~p requested ~p and got in ~p jumps~n",
+                [self(), RequestKey, NumJumps]),
+            chord_ring ! {finished_jumping, NumJumps},
             NewFingerTable = FingerTable;
         {give_key, Pid, RequestKey, NumJumps} ->
             Pid ! {accept_key, RequestKey, NumJumps},
@@ -126,31 +128,46 @@ start_requests(NodeList, NumRequests) ->
     lists:keymap(Fun, 2, NodeList),
     start_requests(NodeList, NumRequests - 1).
 
-server(NodeList, NumRequests) ->
+server(NodeList, NumRequests, JumpList) ->
     receive
         {spawn_nodes, NumNodes, M} ->
             spawn_node(NumNodes, M),
-            NewNodeList = NodeList;
+            NewNodeList = NodeList,
+            NewJumpList = JumpList; 
         {update_node_list, Id, Pid} ->
             NewNodeList = lists:append([{Id, Pid}], NodeList),
-            update_nodes(NewNodeList);
+            update_nodes(NewNodeList),
+            NewJumpList = JumpList;
         {resolve_pid, From, Step} ->
             From ! {id_result, lists:keyfind(Step, 1, NodeList)},
-            NewNodeList = NodeList;
+            NewNodeList = NodeList,
+            NewJumpList = JumpList;
         finished_spawning ->
-            io:fwrite("finished spawning   ~p~n", [NodeList]),
+            io:fwrite("finished spawning nodes:   ~p~n", [NodeList]),
             timer:sleep(0500),
             start_requests(NodeList, NumRequests),
-            NewNodeList = NodeList;
+            NewNodeList = NodeList,
+            NewJumpList = JumpList;
         finished_requests ->
-            io:fwrite("finished requests~n"),
-            NewNodeList = NodeList
+            io:fwrite("finished starting requests~n"),
+            NewNodeList = NodeList,
+            NewJumpList = JumpList;
+        {finished_jumping, NumJumps} ->
+            NewNodeList = NodeList,
+            NewJumpList = lists:append([NumJumps], JumpList);
+        display_jump_average ->
+            JumpSum = lists:sum(JumpList),
+            JumpListLength = length(JumpList),
+            AvgJumps = JumpSum / JumpListLength,
+            io:fwrite("The average number of jumps is: ~p~n", [AvgJumps]),
+            NewNodeList = NodeList,
+            NewJumpList = JumpList
     end,
-    server(NewNodeList, NumRequests).
+    server(NewNodeList, NumRequests, NewJumpList).
 
 % TODO should be able to insert or remove nodes now
 start(NumNodes, NumRequests) ->
     % M = erlang:trunc(math:ceil(math:sqrt(NumNodes))),
     M = 6,
-    register(chord_ring, spawn(?MODULE, server, [[], NumRequests])),
+    register(chord_ring, spawn(?MODULE, server, [[], NumRequests, []])),
     chord_ring ! {spawn_nodes, NumNodes, M}.
