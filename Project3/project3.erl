@@ -111,7 +111,7 @@ chord_node(M, FingerTable) ->
 
 spawn_node(0, _) ->
     chord_ring ! finished_spawning;
-spawn_node(NumNodes, M) when NumNodes > 0 ->
+spawn_node(NumNodes, M) -> % when NumNodes > 0
     Pid = spawn(?MODULE, chord_node, [M, []]),
     Id = get_id(Pid, M),
     chord_ring ! {update_node_list, Id, Pid},
