@@ -1,6 +1,6 @@
 -module(project4).
 
--export([start/0, server/2]).
+-export([start/0, server/2, user_auth/1, tweet_log/1]).
 
 
 
@@ -8,47 +8,73 @@
 % the server will send tweets out to all users that are online and also keep
 %% a list of the tweets?
 
-
-
-server(UserList, Tweets) ->
+user_auth(Users) ->
     receive
-        {register_user, UserName} ->
-            ExistingUser = lists:member(UserName, UserList),
+        {check_user, UserName, From} ->
+            ExistingUser = lists:member(UserName, Users),
+            From ! {user_result, ExistingUser, UserName},
+            UpdatedUsers = Users;
+        {user_result, ExistingUser, UserName} ->
             if
                 ExistingUser == false ->
-                    NewUserList = lists:append([UserName], UserList);
+                    self() ! {register_user, UserName};
                 true ->
-                    io:fwrite("That user already exists, please choose another~n"),
-                    NewUserList = UserList
+                    io:fwrite("That user already exists, please choose another~n")
             end,
-            NewTweets = Tweets;
+            UpdatedUsers = Users;
+        {request_user, UserName} ->
+            self() ! {check_user, UserName, self()},
+            UpdatedUsers = Users;
+        {register_user, UserName} ->
+            UpdatedUsers = lists:append([UserName], Users);
+        print_users ->
+            io:fwrite("~p", [Users]),
+            UpdatedUsers = Users
+    end,
+    user_auth(UpdatedUsers).
+
+
+
+tweet_log(Tweets) ->
+    receive
         {send_tweet, UserName, Tweet} ->
             TweetLength = string:length(Tweet),
             ExistingUser = lists:member(UserName, UserList),
             if 
                 TweetLength > 140 ->
-                    NewTweets = Tweets,
+                    UpdatedTweets = Tweets,
                     io:fwrite("Tweet is too long, needs to be =< 140 char~n");
                 ExistingUser == false ->
-                    NewTweets = Tweets,
+                    UpdatedTweets = Tweets,
                     io:fwrite("That user does not exist~n");
                 true ->
-                    NewTweets = lists:append([Tweet], Tweets),
+                    UpdatedTweets = lists:append([{UserName, Tweet}], Tweets),
                     io:fwrite("~p says: ~p", [UserName, Tweet])
-            end,
-            NewUserList = UserList;
-        print_users ->
-            io:fwrite("~p", [UserList]),
-            NewTweets = Tweets,
-            NewUserList = UserList;
+            end;
         print_tweets ->
             io:fwrite("~p", [Tweets]),
-            NewTweets = Tweets,
-            NewUserList = UserList
+            UpdatedTweets = Tweets
     end,
-    server(NewUserList, NewTweets).
+    tweet_log(UpdatedTweets).
+        
+
+
+server(UserAuth, TweetLog) ->
+    receive
+        {make_user, UserName} ->
+            UserAuth ! {request_user, UserName};
+        {send_tweet, UserName, Tweet} ->
+            TweetLog ! {send_tweet, UserName, Tweet}; % edit this
+        print_users ->
+            UserAuth ! print_users;
+        print_tweets ->
+            TweetLog ! print_tweets
+    end,
+    server(UserAuth, TweetLog).
 
 
 
 start() ->
-    register(twit_host, spawn(?MODULE, server, [[], []])).
+    UserAuth = spawn(?MODULE, user_auth, [[]]),
+    TweetLog = spawn(?MODULE, tweet_log, [[]]),
+    register(twitter, spawn(?MODULE, server, [UserAuth, TweetLog])).
