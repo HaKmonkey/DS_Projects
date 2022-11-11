@@ -1,80 +1,92 @@
 -module(project4).
 
--export([start/0, server/2, user_auth/1, tweet_log/1]).
+-export([start/0, server/0, user_auth/0, tweet_log/0]).
+
+% Could we use records for users and tweets?
+% TODO: add passwords for the users
 
 
-
-% user will send and receive tweets...
-% the server will send tweets out to all users that are online and also keep
-%% a list of the tweets?
-
-user_auth(Users) ->
+user_auth() ->
     receive
-        {check_user, UserName, From} ->
-            ExistingUser = lists:member(UserName, Users),
-            From ! {user_result, ExistingUser, UserName},
-            UpdatedUsers = Users;
-        {user_result, ExistingUser, UserName} ->
+        {check_user, UserName, Password, Tweet, From} ->
+            ExistingUser = ets:member(twitter_users, UserName),
+            From ! {user_result, ExistingUser, UserName, Password, Tweet};
+        {user_result, ExistingUser, UserName, Password, _} ->
             if
                 ExistingUser == false ->
-                    self() ! {register_user, UserName};
+                    self() ! {register_user, UserName, Password};
                 true ->
                     io:fwrite("That user already exists, please choose another~n")
-            end,
-            UpdatedUsers = Users;
-        {request_user, UserName} ->
-            self() ! {check_user, UserName, self()},
-            UpdatedUsers = Users;
-        {register_user, UserName} ->
-            UpdatedUsers = lists:append([UserName], Users);
+            end;
+        {request_user, UserName, Password} ->
+            self() ! {check_user, UserName, Password, "", self()};
+        {register_user, UserName, Password} ->
+            ets:insert_new(twitter_users, {UserName, Password});
         print_users ->
-            io:fwrite("~p", [Users]),
-            UpdatedUsers = Users
+            io:fwrite("~p", [ets:info(twitter_users)])
     end,
-    user_auth(UpdatedUsers).
+    user_auth().
 
 
 
-tweet_log(Tweets) ->
+tweet_log() ->
     receive
-        {send_tweet, UserName, Tweet} ->
-            TweetLength = string:length(Tweet),
-            ExistingUser = lists:member(UserName, UserList),
-            if 
-                TweetLength > 140 ->
-                    UpdatedTweets = Tweets,
-                    io:fwrite("Tweet is too long, needs to be =< 140 char~n");
+        {start_tweet, UserName, Password, Tweet} ->
+            user_server ! {check_user, UserName, Password, Tweet, self()};
+        {user_result, ExistingUser, UserName, _, Tweet} ->
+            if
                 ExistingUser == false ->
-                    UpdatedTweets = Tweets,
                     io:fwrite("That user does not exist~n");
                 true ->
-                    UpdatedTweets = lists:append([{UserName, Tweet}], Tweets),
-                    io:fwrite("~p says: ~p", [UserName, Tweet])
+                    self() ! {publish_tweet, UserName, Tweet}
+            end;
+        {publish_tweet, UserName, Tweet} ->
+            TweetLength = string:length(Tweet),
+            if 
+                TweetLength > 140 ->
+                    io:fwrite("Tweet is too long, needs to be =< 140 char~n");
+                true ->
+                    ets:insert_new(twitter_tweets, {UserName, Tweet}),
+                    io:fwrite("~p:~n\t~p~n", [UserName, Tweet])
             end;
         print_tweets ->
-            io:fwrite("~p", [Tweets]),
-            UpdatedTweets = Tweets
+            io:fwrite("~p", [ets:info(twitter_tweets)])
     end,
-    tweet_log(UpdatedTweets).
+    tweet_log().
         
 
+% can search for tags using
+% TestString = "This is a #test".
+% string:find(TestString, "#"). >> "#test"
+% ^ will find the searched tag, but if they are similar then it will find both
 
-server(UserAuth, TweetLog) ->
+
+
+% subscribe to a certain user ->
+%% searching tweets by username ->
+%%% maintaining a subscribtion list
+
+
+server() ->
     receive
-        {make_user, UserName} ->
-            UserAuth ! {request_user, UserName};
-        {send_tweet, UserName, Tweet} ->
-            TweetLog ! {send_tweet, UserName, Tweet}; % edit this
+        {make_user, UserName, Password} ->
+            Hash = binary:decode_unsigned(crypto:hash(sha256,Password)),
+            user_server ! {request_user, UserName, Hash};
+        {write_tweet, UserName, Password, Tweet} ->
+            Hash = binary:decode_unsigned(crypto:hash(sha256,Password)),
+            tweet_server ! {start_tweet, UserName, Hash, Tweet};
         print_users ->
-            UserAuth ! print_users;
+            user_server ! print_users;
         print_tweets ->
-            TweetLog ! print_tweets
+            tweet_server ! print_tweets
     end,
-    server(UserAuth, TweetLog).
+    server().
 
 
 
 start() ->
-    UserAuth = spawn(?MODULE, user_auth, [[]]),
-    TweetLog = spawn(?MODULE, tweet_log, [[]]),
-    register(twitter, spawn(?MODULE, server, [UserAuth, TweetLog])).
+    ets:new(twitter_users, [set, named_table, public]),
+    ets:new(twitter_tweets, [set, named_table, public]),
+    register(user_server, spawn(?MODULE, user_auth, [])),
+    register(tweet_server, spawn(?MODULE, tweet_log, [])),
+    register(twitter_host, spawn(?MODULE, server, [])).
