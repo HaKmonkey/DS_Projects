@@ -7,15 +7,11 @@
 % project4:start_user('test','host@127.0.0.1').
 % Then you can proceed to test user commands...
 
-
-
-% TODO:
-% Need to catch if the password is incorrect somehow
-% implement the password auth for users
-
-% subscribe to a certain user ->
-%% searching tweets by username ->
-%%% maintaining a subscribtion list
+% TODO implement re-tweets somehow
+% TODO allow users to query tweets by subscribed to list
+% TODO deliver tweets to user that the user is subscribed to AND that contain mentions of the user
+%% no other tweets should be delivered
+% TODO need to report performance of simulation? How?
 
 -module(project4).
 
@@ -159,23 +155,25 @@ user_node(TableName, HostPid) ->
             {twitter_host, HostPid} ! {login, UserName, Hash, self()};
         {online, UserName, Password} ->
             ets:insert_new(TableName, {user_info, UserName, Password});
-        log_off -> % update the access to the table to be private
+        log_off ->
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
             {twitter_host, HostPid} ! {log_off, UserName};
             %erlang:exit(self(), normal);
-        {make_tweet, Tweet} -> % need to fix this after implementing the login...
+        {make_tweet, Tweet} ->
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
             {twitter_host, HostPid} ! {get_status, UserName, self(), "Tweet", Tweet};
         {subscribe, SubscribeTo} -> % Need to figure out how to show tweets now...
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
             {twitter_host, HostPid} ! {get_status, UserName, self(), "Subscribe", SubscribeTo};
-        {search_tweets_by_tag, Tag} -> % not implemented yet...
+        {search_tweets_by_tag, Tag} ->
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
             {twitter_host, HostPid} ! {get_status, UserName, self(), "Search Tags", Tag};
-        search_tweets_by_mention -> % not implemented yet...
+        search_tweets_by_mention ->
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
             Mention = "@" + UserName,
             {twitter_host, HostPid} ! {get_status, UserName, self(), "Search Mentions", Mention};
+        search_tweets_by_subscription -> % not implemented yet...
+            done;
         {status, UserName, Status, Reason, Message} ->
             if
                 Status == online ->
@@ -204,8 +202,10 @@ user_node(TableName, HostPid) ->
                 \t~p ! {make_tweet, Tweet}.
                 \t~p ! {subscribe, SubscribeTo}.
                 \t~p ! {search_tweets_by_tag, Tag}.
-                \t~p ! {search_tweets_by_mention}.~n
-            ",[self(),self(),self(),self(),self(),self(),self()])
+                \t~p ! search_tweets_by_mention.
+                \t~p ! search_tweets_by_subscription.
+                \t~p ! help.~n
+            ",[self(),self(),self(),self(),self(),self(),self(),self(),self()])
     end,
     user_node(TableName, HostPid).
 
@@ -228,6 +228,7 @@ start_user(TableName, HostPid) ->
         \t~p ! {make_tweet, Tweet}.
         \t~p ! {subscribe, SubscribeTo}.
         \t~p ! {search_tweets_by_tag, Tag}.
-        \t~p ! {search_tweets_by_mention}.
+        \t~p ! search_tweets_by_mention.
+        \t~p ! search_tweets_by_subscription.
         \t~p ! help.~n
-    ",[Pid,Pid,Pid,Pid,Pid,Pid,Pid,Pid]).
+    ",[Pid,Pid,Pid,Pid,Pid,Pid,Pid,Pid,Pid]).
