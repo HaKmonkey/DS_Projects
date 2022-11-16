@@ -1,8 +1,6 @@
 % TODO:
 % Need to catch if the password is incorrect somehow
 % implement the password auth for users
-% Need to implement tracking for logged in state - perhaps in user table?
-% use logged in state to then allow tweeting functionality
 
 % subscribe to a certain user ->
 %% searching tweets by username ->
@@ -105,17 +103,21 @@ host_server(UserServer, TweetServer) ->
             TweetServer ! awake,
             io:fwrite("Host IP: ~p~n", [self()]);
         {make_user, UserName, Password, From} ->
+            io:fwrite("Making user: ~p~n", [UserName]),
             UserServer ! {request_user, From, UserName, Password, "New User"};
         {login, UserName, Password, From} ->
             UserServer ! {request_user, From, UserName, Password, "Login"};
         {write_tweet, UserName, Tweet} ->
+            io:fwrite("~p:~n\t~p~n", [UserName, Tweet]),
             TweetServer ! {publish_tweet, UserName, Tweet};
         {log_off, UserName} ->
             UserServer ! {log_off, UserName};
         {get_status, UserName, From, Reason, Message} ->
             UserServer ! {get_status, UserName, From, Reason, Message};
         {search_tweets, Message, From} ->
-            TweetServer ! {search_tweets, Message, From}
+            TweetServer ! {search_tweets, Message, From};
+        ping ->
+            io:fwrite("~p I'm here!~n", [self()])
     end,
     host_server(UserServer, TweetServer).
 
@@ -127,48 +129,63 @@ user_node(TableName, HostPid) ->
             ets:new(TableName, [set, named_table, private]);
         {new_user, UserName, Password} ->
             Hash = binary:decode_unsigned(crypto:hash(sha256,Password)),
-            HostPid ! {make_user, UserName, Hash, self()};
+            {twitter_host, HostPid} ! {make_user, UserName, Hash, self()};
         {login, UserName, Password} ->
             Hash = binary:decode_unsigned(crypto:hash(sha256,Password)),
-            HostPid ! {login, UserName, Hash, self()};
+            {twitter_host, HostPid} ! {login, UserName, Hash, self()};
         {online, UserName, Password} ->
             ets:insert_new(TableName, {user_info, UserName, Password});
         log_off -> % update the access to the table to be private
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
-            HostPid ! {log_off, UserName},
+            {twitter_host, HostPid} ! {log_off, UserName},
             erlang:exit(self(), normal);
         {make_tweet, Tweet} -> % need to fix this after implementing the login...
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
-            HostPid ! {get_status, UserName, self(), "Tweet", Tweet};
+            {twitter_host, HostPid} ! {get_status, UserName, self(), "Tweet", Tweet};
         {subscribe, SubscribeTo} -> % Need to figure out how to show tweets now...
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
-            HostPid ! {get_status, UserName, self(), "Subscribe", SubscribeTo};
+            {twitter_host, HostPid} ! {get_status, UserName, self(), "Subscribe", SubscribeTo};
         {search_tweets_by_tag, Tag} -> % not implemented yet...
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
-            HostPid ! {get_status, UserName, self(), "Search Tags", Tag};
+            {twitter_host, HostPid} ! {get_status, UserName, self(), "Search Tags", Tag};
         search_tweets_by_mention -> % not implemented yet...
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
             Mention = "@" + UserName,
-            HostPid ! {get_status, UserName, self(), "Search Mentions", Mention};
+            {twitter_host, HostPid} ! {get_status, UserName, self(), "Search Mentions", Mention};
         {status, UserName, Status, Reason, Message} ->
             if
                 Status == online ->
                     if
                         Reason == "Tweet" ->
-                            HostPid ! {write_tweet, UserName, Message};
+                            {twitter_host, HostPid} ! {write_tweet, UserName, Message};
                         Reason == "Subscribe" ->
                             ets:insert_new(TableName, {subscribed, Message}),
                             io:fwrite("Subscribed to: ~p~n", [Message]);
                         Reason == "Search Tags" ->
-                            HostPid ! {search_tweets, Message, self()};
+                            {twitter_host, HostPid} ! {search_tweets, Message, self()};
                         Reason == "Search Mentions" ->
-                            HostPid ! {search_tweets, Message, self()}
+                            {twitter_host, HostPid} ! {search_tweets, Message, self()}
                     end;
                 true ->
                     io:fwrite("You need to log in first~n")
             end;
         {print_search_results, MatchList} ->
-            io:fwrite("~p~n", [MatchList])
+            io:fwrite("~p~n", [MatchList]);
+        help ->
+            io:fwrite("
+                Here is a list of commands you can use:~n
+                \t~p ! {new_user, UserName, Password}.
+                \t~p ! {login, UserName, Password}.
+                \t~p ! log_off.
+                \t~p ! {make_tweet, Tweet}.
+                \t~p ! {subscribe, SubscribeTo}.
+                \t~p ! {search_tweets_by_tag, Tag}.
+                \t~p ! {search_tweets_by_mention}.~n
+            ",[self(),self(),self(),self(),self(),self(),self()])
+        % print_info ->
+        %     % [Result] = ets:lookup(TableName, user_info),
+        %     [{_, Result,_}] = ets:lookup(TableName, user_info),
+        %     io:fwrite("~p~n",[Result])
     end,
     user_node(TableName, HostPid).
 
@@ -185,11 +202,11 @@ start_user(TableName, HostPid) ->
     Pid ! awake,
     io:fwrite("
         Here is a list of commands you can use:~n
-        \t~p ! {new_user, UserName, Password}
-        \t~p ! {login, UserName, Password}
-        \t~p ! log_off
-        \t~p ! {make_tweet, Tweet}
-        \t~p ! {subscribe, SubscribeTo}
-        \t~p ! {search_tweets_by_tag, Tag}
-        \t~p ! {search_tweets_by_mention}~n
+        \t~p ! {new_user, UserName, Password}.
+        \t~p ! {login, UserName, Password}.
+        \t~p ! log_off.
+        \t~p ! {make_tweet, Tweet}.
+        \t~p ! {subscribe, SubscribeTo}.
+        \t~p ! {search_tweets_by_tag, Tag}.
+        \t~p ! {search_tweets_by_mention}.~n
     ",[Pid,Pid,Pid,Pid,Pid,Pid,Pid]).
