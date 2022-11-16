@@ -161,8 +161,8 @@ user_node(TableName, HostPid) ->
             ets:insert_new(TableName, {user_info, UserName, Password});
         log_off -> % update the access to the table to be private
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
-            {twitter_host, HostPid} ! {log_off, UserName},
-            erlang:exit(self(), normal);
+            {twitter_host, HostPid} ! {log_off, UserName};
+            %erlang:exit(self(), normal);
         {make_tweet, Tweet} -> % need to fix this after implementing the login...
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
             {twitter_host, HostPid} ! {get_status, UserName, self(), "Tweet", Tweet};
