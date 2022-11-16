@@ -14,15 +14,17 @@
     start_host/0,
     start_user/1,
     user_node/1,
-    host_server/0,
+    host_server/2,
     user_auth_server/0,
-    tweet_log_server/0
+    tweet_log_server/1
 ]).
 %-compile(export_all).
 
-% everything will need a user result message
 user_auth_server() ->
     receive
+        awake ->
+            ets:new(twitter_users, [set, named_table, private]),
+            io:fwrite("User Auth server started.~n");
         {request_user, From, UserName, Password, Reason} ->
             if
                 Reason == "New User" ->
@@ -49,124 +51,137 @@ user_auth_server() ->
                 true ->
                     io:fwrite("Perhaps the username or password was incorrect~n")
             end;
-        print_users ->
-            io:fwrite("~p", [ets:info(twitter_users)])
+        {log_off, UserName} ->
+            ets:update_element(twitter_users, UserName, {3, offline});
+        {get_status, UserName, From, Reason, Message} ->
+            [{_, _, Status}] = ets:lookup(twitter_users, UserName),
+            From ! {status, UserName, Status, Reason, Message}
     end,
     user_auth_server().
 
 
-tweet_log_server() ->
+search_tweets(_, _, Key, MatchList) when Key == '$end_of_table' ->
+    MatchList;
+search_tweets(Table, By, Key, MatchList) -> 
+    NextKey = ets:next(Table, Key),
+    [{_, _, Tweet}] = ets:lookup(Table, NextKey),
+    Tag = string:find(Tweet, By),
+    if
+        Tag == By -> UpdatedMatchList = lists:append([Tweet], MatchList);
+        true -> UpdatedMatchList = MatchList
+    end,
+    search_tweets(Table, By, NextKey, UpdatedMatchList).
+
+
+tweet_log_server(Id) ->
     receive
-        {start_tweet, UserName, Password, Tweet} ->
-            user_server ! {check_user, UserName, Password, Tweet, self()};
-        {user_result, ExistingUser, UserName, _, Tweet} ->
-            if
-                ExistingUser == false ->
-                    io:fwrite("That user does not exist~n");
-                true ->
-                    self() ! {publish_tweet, UserName, Tweet}
-            end;
+        awake ->
+            ets:new(twitter_tweets, [set, named_table, private]),
+            io:fwrite("Tweet Log server started.~n"),
+            NewId = Id;
         {publish_tweet, UserName, Tweet} ->
             TweetLength = string:length(Tweet),
             if 
                 TweetLength > 140 ->
                     io:fwrite("Tweet is too long, needs to be =< 140 char~n");
                 true ->
-                    ets:insert_new(twitter_tweets, {UserName, Tweet}),
+                    ets:insert_new(twitter_tweets, {Id, UserName, Tweet}),
                     io:fwrite("~p:~n\t~p~n", [UserName, Tweet])
-            end;
-        print_tweets ->
-            io:fwrite("~p", [ets:info(twitter_tweets)])
+            end,
+            NewId = Id + 1;
+        {search_tweets, By, From} ->
+            FirstKey = ets:first(twitter_tweets),
+            MatchList = search_tweets(twitter_tweets, By, FirstKey, []),
+            From ! {print_search_results, MatchList},
+            NewId = Id
     end,
-    tweet_log_server().
-        
-% can search for tags using
-% TestString = "This is a #test".
-% string:find(TestString, "#"). >> "#test"
-% ^ will find the searched tag, but if they are similar then it will find both
+    tweet_log_server(NewId).
 
-host_server() ->
+
+host_server(UserServer, TweetServer) ->
     receive
+        awake ->
+            UserServer ! awake,
+            TweetServer ! awake;
         {make_user, UserName, Password, From} ->
-            Hash = binary:decode_unsigned(crypto:hash(sha256,Password)),
-            user_server ! {request_user, From, UserName, Hash, "New User"};
+            UserServer ! {request_user, From, UserName, Password, "New User"};
         {login, UserName, Password, From} ->
-            Hash = binary:decode_unsigned(crypto:hash(sha256,Password)),
-            user_server ! {request_user, From, UserName, Hash, "Login"};
-        {write_tweet, UserName, Password, Tweet} ->
-            Hash = binary:decode_unsigned(crypto:hash(sha256,Password)),
-            tweet_server ! {start_tweet, UserName, Hash, Tweet};
-        print_users ->
-            user_server ! print_users;
-        print_tweets ->
-            tweet_server ! print_tweets
+            UserServer ! {request_user, From, UserName, Password, "Login"};
+        {write_tweet, UserName, Tweet} ->
+            TweetServer ! {publish_tweet, UserName, Tweet};
+        {log_off, UserName} ->
+            UserServer ! {log_off, UserName};
+        {get_status, UserName, From, Reason, Message} ->
+            UserServer ! {get_status, UserName, From, Reason, Message};
+        {search_tweets, Message, From} ->
+            TweetServer ! {search_tweets, Message, From}
     end,
-    host_server().
-
-
-search_tweets() -> 
-    ets:first(twitter_tweets).
-    % get the first key, then use it to get the following keys in a loop
-    % searching for the key phrase
-    % will need to modify how tweets are stored
-
-
-get_status(TableName) ->
-    [{_, UserName, _}] = ets:lookup(TableName, user_info),
-    [{_, _, Status}] = ets:lookup(twitter_users, UserName),
-    {UserName, Status}.
+    host_server(UserServer, TweetServer).
 
 
 user_node(TableName) ->
     receive
         awake ->
             io:fwrite("This is the Pid for the user node: ~p~n~n", [self()]),
-            ets:new(TableName, [set, named_table, public]);
+            ets:new(TableName, [set, named_table, private]);
         {new_user, UserName, Password} ->
-            twitter_host ! {make_user, UserName, Password, self()};
+            Hash = binary:decode_unsigned(crypto:hash(sha256,Password)),
+            twitter_host ! {make_user, UserName, Hash, self()};
         {login, UserName, Password} ->
-            twitter_host ! {login, UserName, Password, self()};
+            Hash = binary:decode_unsigned(crypto:hash(sha256,Password)),
+            twitter_host ! {login, UserName, Hash, self()};
         {online, UserName, Password} ->
             ets:insert_new(TableName, {user_info, UserName, Password});
-        log_off ->
+        log_off -> % update the access to the table to be private
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
-            ets:update_element(twitter_users, UserName, {3, offline}),
+            twitter_host ! {log_off, UserName},
             erlang:exit(self(), normal);
-        {make_tweet, UserName, Password, Tweet} -> % need to fix this after implementing the login...
-            {_, Status} = get_status(TableName),
+        {make_tweet, Tweet} -> % need to fix this after implementing the login...
+            [{_, UserName, _}] = ets:lookup(TableName, user_info),
+            twitter_host ! {get_status, UserName, self(), "Tweet", Tweet};
+        {subscribe, SubscribeTo} -> % Need to figure out how to show tweets now...
+            [{_, UserName, _}] = ets:lookup(TableName, user_info),
+            twitter_host ! {get_status, UserName, self(), "Subscribe", SubscribeTo};
+        {search_tweets_by_tag, Tag} -> % not implemented yet...
+            [{_, UserName, _}] = ets:lookup(TableName, user_info),
+            twitter_host ! {get_status, UserName, self(), "Search Tags", Tag};
+        search_tweets_by_mention -> % not implemented yet...
+            [{_, UserName, _}] = ets:lookup(TableName, user_info),
+            Mention = "@" + UserName,
+            twitter_host ! {get_status, UserName, self(), "Search Mentions", Mention};
+        {status, UserName, Status, Reason, Message} ->
             if
-                Status == online -> 
-                    twitter_host ! {write_tweet, UserName, Password, Tweet};
+                Status == online ->
+                    if
+                        Reason == "Tweet" ->
+                            twitter_host ! {write_tweet, UserName, Message};
+                        Reason == "Subscribe" ->
+                            ets:insert_new(TableName, {subscribed, Message}),
+                            io:fwrite("Subscribed to: ~p~n", [Message]);
+                        Reason == "Search Tags" ->
+                            twitter_host ! {search_tweets, Message, self()};
+                        Reason == "Search Mentions" ->
+                            twitter_host ! {search_tweets, Message, self()}
+                    end;
                 true ->
                     io:fwrite("You need to log in first~n")
             end;
-        {subscribe, SubscribeTo} -> % Need to figure out how to show tweets now...
-            {_, Status} = get_status(TableName),
-            if
-                Status == online -> 
-                    ets:insert_new(TableName, {subscribed, SubscribeTo});
-                true ->
-                    io:fwrite("You need to log in first~n")
-            end,
-            io:fwrite("Subscribed to: ~p~n", [SubscribeTo]);
-        {search_tweets_by_tag, Tag} -> % not implemented yet...
-            {_, Status} = get_status(TableName),
-            io:fwrite("~p~n", [Tag]);
-        {search_tweets_by_mention} -> % not implemented yet...
-            {UserName, Status} = get_status(TableName),
-            done
+        {print_search_results, MatchList} ->
+            io:fwrite("~p~n", [MatchList])
     end,
     user_node(TableName).
 
 
 start_host() ->
-    ets:new(twitter_users, [set, named_table, public]),
-    ets:new(twitter_tweets, [set, named_table, public]),
-    register(user_server, spawn(?MODULE, user_auth, [])),
-    register(tweet_server, spawn(?MODULE, tweet_log, [])),
-    register(twitter_host, spawn(?MODULE, host_server, [])).
+    UserServer = spawn(?MODULE, user_auth, []),
+    TweetServer = spawn(?MODULE, tweet_log, [0]),
+    register(
+        twitter_host,
+        spawn(?MODULE, host_server, [UserServer, TweetServer])
+    ),
+    twitter_host ! awake.
 
-% TwitterHost, Username, Password
+
 start_user(TableName) ->
     Pid = spawn(?MODULE, user_node, [TableName]),
     Pid ! awake,
@@ -174,8 +189,9 @@ start_user(TableName) ->
         Here is a list of commands you can use:~n
         \t~p ! {new_user, UserName, Password}
         \t~p ! {login, UserName, Password}
+        \t~p ! log_off
         \t~p ! {make_tweet, Tweet}
         \t~p ! {subscribe, SubscribeTo}
         \t~p ! {search_tweets_by_tag, Tag}
         \t~p ! {search_tweets_by_mention}~n
-    ",[Pid,Pid,Pid,Pid,Pid,Pid]).
+    ",[Pid,Pid,Pid,Pid,Pid,Pid,Pid]).
