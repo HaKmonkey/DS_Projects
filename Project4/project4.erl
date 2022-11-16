@@ -1,3 +1,14 @@
+% TO START HOST
+% erl -name host@10.0.0.1 -setcookie demo
+% project4:start_host().
+
+% TO START USER
+% erl -name user@10.0.0.1 -setcookie demo
+% project4:start_user('test','host@10.0.0.1').
+% Then you can proceed to test user commands...
+
+
+
 % TODO:
 % Need to catch if the password is incorrect somehow
 % implement the password auth for users
@@ -100,8 +111,7 @@ host_server(UserServer, TweetServer) ->
     receive
         awake ->
             UserServer ! awake,
-            TweetServer ! awake,
-            io:fwrite("Host IP: ~p~n", [self()]);
+            TweetServer ! awake;
         {make_user, UserName, Password, From} ->
             io:fwrite("Making user: ~p~n", [UserName]),
             UserServer ! {request_user, From, UserName, Password, "New User"};
@@ -182,10 +192,6 @@ user_node(TableName, HostPid) ->
                 \t~p ! {search_tweets_by_tag, Tag}.
                 \t~p ! {search_tweets_by_mention}.~n
             ",[self(),self(),self(),self(),self(),self(),self()])
-        % print_info ->
-        %     % [Result] = ets:lookup(TableName, user_info),
-        %     [{_, Result,_}] = ets:lookup(TableName, user_info),
-        %     io:fwrite("~p~n",[Result])
     end,
     user_node(TableName, HostPid).
 
@@ -208,5 +214,6 @@ start_user(TableName, HostPid) ->
         \t~p ! {make_tweet, Tweet}.
         \t~p ! {subscribe, SubscribeTo}.
         \t~p ! {search_tweets_by_tag, Tag}.
-        \t~p ! {search_tweets_by_mention}.~n
-    ",[Pid,Pid,Pid,Pid,Pid,Pid,Pid]).
+        \t~p ! {search_tweets_by_mention}.
+        \t~p ! help.~n
+    ",[Pid,Pid,Pid,Pid,Pid,Pid,Pid,Pid]).
