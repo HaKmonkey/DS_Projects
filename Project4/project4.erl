@@ -1,10 +1,10 @@
 % TO START HOST
-% erl -name host@10.0.0.1 -setcookie demo
+% erl -name host@127.0.0.1
 % project4:start_host().
 
 % TO START USER
-% erl -name user@10.0.0.1 -setcookie demo
-% project4:start_user('test','host@10.0.0.1').
+% erl -name user@127.0.0.2
+% project4:start_user('test','host@127.0.0.1').
 % Then you can proceed to test user commands...
 
 
@@ -71,13 +71,22 @@ user_auth_server() ->
 
 search_tweets(_, _, Key, MatchList) when Key == '$end_of_table' ->
     MatchList;
-search_tweets(Table, By, Key, MatchList) -> 
+search_tweets(Table, By, Key, MatchList) ->
+    io:fwrite("This is the key: ~p~n", [Key]), 
     NextKey = ets:next(Table, Key),
-    [{_, _, Tweet}] = ets:lookup(Table, NextKey),
-    Tag = string:find(Tweet, By),
+    io:fwrite("This is the nextkey: ~p~n", [NextKey]),
     if
-        Tag == By -> UpdatedMatchList = lists:append([Tweet], MatchList);
-        true -> UpdatedMatchList = MatchList
+        NextKey =/= '$end_of_table' ->
+            [{_, _, Tweet}] = ets:lookup(Table, NextKey),
+            io:fwrite("This is the tweet: ~p~n", [Tweet]),
+            Tag = string:find(Tweet, By),
+            if
+                Tag == By -> UpdatedMatchList = lists:append([Tweet], MatchList);
+                true -> UpdatedMatchList = MatchList
+            end;
+        true ->
+            UpdatedMatchList = MatchList,
+            search_tweets(Table, By, NextKey, UpdatedMatchList)
     end,
     search_tweets(Table, By, NextKey, UpdatedMatchList).
 
@@ -95,13 +104,19 @@ tweet_log_server(Id) ->
                     io:fwrite("Tweet is too long, needs to be =< 140 char~n");
                 true ->
                     ets:insert_new(twitter_tweets, {Id, UserName, Tweet}),
-                    io:fwrite("~p:~n\t~p~n", [UserName, Tweet])
+                    io:fwrite("~p:~n\t~p: ~p~n", [UserName, Id, Tweet])
             end,
             NewId = Id + 1;
         {search_tweets, By, From} ->
             FirstKey = ets:first(twitter_tweets),
+            [{_, _, Tweet}] = ets:lookup(twitter_tweets, FirstKey),
+            Tag = string:find(Tweet, By),
             MatchList = search_tweets(twitter_tweets, By, FirstKey, []),
-            From ! {print_search_results, MatchList},
+            if
+                Tag == By -> UpdatedMatchList = lists:append([Tweet], MatchList);
+                true -> UpdatedMatchList = MatchList
+            end,
+            From ! {print_search_results, UpdatedMatchList},
             NewId = Id
     end,
     tweet_log_server(NewId).
@@ -118,7 +133,6 @@ host_server(UserServer, TweetServer) ->
         {login, UserName, Password, From} ->
             UserServer ! {request_user, From, UserName, Password, "Login"};
         {write_tweet, UserName, Tweet} ->
-            io:fwrite("~p:~n\t~p~n", [UserName, Tweet]),
             TweetServer ! {publish_tweet, UserName, Tweet};
         {log_off, UserName} ->
             UserServer ! {log_off, UserName};
