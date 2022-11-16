@@ -12,8 +12,8 @@
 
 -export([
     start_host/0,
-    start_user/1,
-    user_node/1,
+    start_user/2,
+    user_node/2,
     host_server/2,
     user_auth_server/0,
     tweet_log_server/1
@@ -102,7 +102,8 @@ host_server(UserServer, TweetServer) ->
     receive
         awake ->
             UserServer ! awake,
-            TweetServer ! awake;
+            TweetServer ! awake,
+            io:fwrite("Host IP: ~p~n", [self()]);
         {make_user, UserName, Password, From} ->
             UserServer ! {request_user, From, UserName, Password, "New User"};
         {login, UserName, Password, From} ->
@@ -119,49 +120,49 @@ host_server(UserServer, TweetServer) ->
     host_server(UserServer, TweetServer).
 
 
-user_node(TableName) ->
+user_node(TableName, HostPid) ->
     receive
         awake ->
             io:fwrite("This is the Pid for the user node: ~p~n~n", [self()]),
             ets:new(TableName, [set, named_table, private]);
         {new_user, UserName, Password} ->
             Hash = binary:decode_unsigned(crypto:hash(sha256,Password)),
-            twitter_host ! {make_user, UserName, Hash, self()};
+            HostPid ! {make_user, UserName, Hash, self()};
         {login, UserName, Password} ->
             Hash = binary:decode_unsigned(crypto:hash(sha256,Password)),
-            twitter_host ! {login, UserName, Hash, self()};
+            HostPid ! {login, UserName, Hash, self()};
         {online, UserName, Password} ->
             ets:insert_new(TableName, {user_info, UserName, Password});
         log_off -> % update the access to the table to be private
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
-            twitter_host ! {log_off, UserName},
+            HostPid ! {log_off, UserName},
             erlang:exit(self(), normal);
         {make_tweet, Tweet} -> % need to fix this after implementing the login...
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
-            twitter_host ! {get_status, UserName, self(), "Tweet", Tweet};
+            HostPid ! {get_status, UserName, self(), "Tweet", Tweet};
         {subscribe, SubscribeTo} -> % Need to figure out how to show tweets now...
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
-            twitter_host ! {get_status, UserName, self(), "Subscribe", SubscribeTo};
+            HostPid ! {get_status, UserName, self(), "Subscribe", SubscribeTo};
         {search_tweets_by_tag, Tag} -> % not implemented yet...
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
-            twitter_host ! {get_status, UserName, self(), "Search Tags", Tag};
+            HostPid ! {get_status, UserName, self(), "Search Tags", Tag};
         search_tweets_by_mention -> % not implemented yet...
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
             Mention = "@" + UserName,
-            twitter_host ! {get_status, UserName, self(), "Search Mentions", Mention};
+            HostPid ! {get_status, UserName, self(), "Search Mentions", Mention};
         {status, UserName, Status, Reason, Message} ->
             if
                 Status == online ->
                     if
                         Reason == "Tweet" ->
-                            twitter_host ! {write_tweet, UserName, Message};
+                            HostPid ! {write_tweet, UserName, Message};
                         Reason == "Subscribe" ->
                             ets:insert_new(TableName, {subscribed, Message}),
                             io:fwrite("Subscribed to: ~p~n", [Message]);
                         Reason == "Search Tags" ->
-                            twitter_host ! {search_tweets, Message, self()};
+                            HostPid ! {search_tweets, Message, self()};
                         Reason == "Search Mentions" ->
-                            twitter_host ! {search_tweets, Message, self()}
+                            HostPid ! {search_tweets, Message, self()}
                     end;
                 true ->
                     io:fwrite("You need to log in first~n")
@@ -169,21 +170,18 @@ user_node(TableName) ->
         {print_search_results, MatchList} ->
             io:fwrite("~p~n", [MatchList])
     end,
-    user_node(TableName).
+    user_node(TableName, HostPid).
 
 
 start_host() ->
-    UserServer = spawn(?MODULE, user_auth, []),
-    TweetServer = spawn(?MODULE, tweet_log, [0]),
-    register(
-        twitter_host,
-        spawn(?MODULE, host_server, [UserServer, TweetServer])
-    ),
+    UserServer = spawn(?MODULE, user_auth_server, []),
+    TweetServer = spawn(?MODULE, tweet_log_server, [0]),
+    register(twitter_host,spawn(?MODULE, host_server, [UserServer, TweetServer])),
     twitter_host ! awake.
 
 
-start_user(TableName) ->
-    Pid = spawn(?MODULE, user_node, [TableName]),
+start_user(TableName, HostPid) ->
+    Pid = spawn(?MODULE, user_node, [TableName, HostPid]),
     Pid ! awake,
     io:fwrite("
         Here is a list of commands you can use:~n
