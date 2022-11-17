@@ -7,8 +7,10 @@
 % project4:start_user('test','host@127.0.0.1').
 % Then you can proceed to test user commands...
 
-% TODO implement re-tweets somehow
-% TODO allow users to query tweets by subscribed to list
+% TEST re-tweets
+% TEST query tweets by subscribed list
+
+% TODO update the help message and be a bit more descriptive
 % TODO deliver tweets to user that the user is subscribed to AND that contain mentions of the user
 %% no other tweets should be delivered
 % TODO need to report performance of simulation? How?
@@ -87,6 +89,15 @@ search_tweets(Table, By, Key, MatchList) ->
     search_tweets(Table, By, NextKey, UpdatedMatchList).
 
 
+get_subscriptions([], _, MatchList) ->
+    MatchList;
+get_subscriptions([H|T], Table, MatchList) -> % head|tail of sbscriptions
+    {_, User} = H,
+    SubbedTweets = ets:match(Table, {'_', User, '_'}),
+    UpdatedMatchList = lists:append(SubbedTweets, MatchList),
+    get_subscriptions(T, Table, UpdatedMatchList).
+
+
 tweet_log_server(Id) ->
     receive
         awake ->
@@ -103,6 +114,12 @@ tweet_log_server(Id) ->
                     io:fwrite("~p:~n\t~p: ~p~n", [UserName, Id, Tweet])
             end,
             NewId = Id + 1;
+        {retweet, UserName, QueryId} ->
+            [{_, PostUser, Tweet}] = ets:lookup(twitter_tweets, QueryId),
+            Retweet = "Retweet from " + PostUser + ": " + Tweet,
+            ets:insert_new(twitter_tweets, {Id, UserName, Retweet}),
+            io:fwrite("~p:~n\t~p: ~p~n", [UserName, Id, Retweet]),
+            NewId = Id + 1;
         {search_tweets, By, From} ->
             FirstKey = ets:first(twitter_tweets),
             [{_, _, Tweet}] = ets:lookup(twitter_tweets, FirstKey),
@@ -113,6 +130,10 @@ tweet_log_server(Id) ->
                 true -> UpdatedMatchList = MatchList
             end,
             From ! {print_search_results, UpdatedMatchList},
+            NewId = Id;
+        {search_subs, Subscriptions, From} ->
+            MatchList = get_subscriptions(Subscriptions, twitter_table, []),
+            From ! {print_search_results, MatchList},
             NewId = Id
     end,
     tweet_log_server(NewId).
@@ -130,12 +151,16 @@ host_server(UserServer, TweetServer) ->
             UserServer ! {request_user, From, UserName, Password, "Login"};
         {write_tweet, UserName, Tweet} ->
             TweetServer ! {publish_tweet, UserName, Tweet};
+        {retweet, UserName, QueryId} ->
+            TweetServer ! {retweet, UserName, QueryId};
         {log_off, UserName} ->
             UserServer ! {log_off, UserName};
         {get_status, UserName, From, Reason, Message} ->
             UserServer ! {get_status, UserName, From, Reason, Message};
         {search_tweets, Message, From} ->
             TweetServer ! {search_tweets, Message, From};
+        {search_subs, Message, From} ->
+            TweetServer ! {search_subs, Message, From};
         ping ->
             io:fwrite("~p I'm here!~n", [self()])
     end,
@@ -162,6 +187,9 @@ user_node(TableName, HostPid) ->
         {make_tweet, Tweet} ->
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
             {twitter_host, HostPid} ! {get_status, UserName, self(), "Tweet", Tweet};
+        {retweet, QueryId} ->
+            [{_, UserName, _}] = ets:lookup(TableName, user_info),
+            {twitter_host, HostPid} ! {get_status, UserName, self(), "Retweet", QueryId};
         {subscribe, SubscribeTo} -> % Need to figure out how to show tweets now...
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
             {twitter_host, HostPid} ! {get_status, UserName, self(), "Subscribe", SubscribeTo};
@@ -173,20 +201,26 @@ user_node(TableName, HostPid) ->
             Mention = "@" + UserName,
             {twitter_host, HostPid} ! {get_status, UserName, self(), "Search Mentions", Mention};
         search_tweets_by_subscription -> % not implemented yet...
-            done;
+            [{_, UserName, _}] = ets:lookup(TableName, user_info),
+            Subscriptions = ets:lookup(TableName, subscribed),
+            {twitter_host, HostPid} ! {get_status, UserName, self(), "Search Subscriptions", Subscriptions};
         {status, UserName, Status, Reason, Message} ->
             if
                 Status == online ->
                     if
                         Reason == "Tweet" ->
                             {twitter_host, HostPid} ! {write_tweet, UserName, Message};
+                        Reason == "Retweet" ->
+                            {twitter_host, HostPid} ! {retweet, UserName, Message};
                         Reason == "Subscribe" ->
                             ets:insert_new(TableName, {subscribed, Message}),
                             io:fwrite("Subscribed to: ~p~n", [Message]);
                         Reason == "Search Tags" ->
                             {twitter_host, HostPid} ! {search_tweets, Message, self()};
                         Reason == "Search Mentions" ->
-                            {twitter_host, HostPid} ! {search_tweets, Message, self()}
+                            {twitter_host, HostPid} ! {search_tweets, Message, self()};
+                        Reason == "Search Subscriptions" ->
+                            {twitter_host, HostPid} ! {search_subs, Message, self()} % How to make list of subscribtions play nice with search tweet in tweet_server
                     end;
                 true ->
                     io:fwrite("You need to log in first~n")
@@ -194,18 +228,7 @@ user_node(TableName, HostPid) ->
         {print_search_results, MatchList} ->
             io:fwrite("~p~n", [MatchList]);
         help ->
-            io:fwrite("
-                Here is a list of commands you can use:~n
-                \t~p ! {new_user, UserName, Password}.
-                \t~p ! {login, UserName, Password}.
-                \t~p ! log_off.
-                \t~p ! {make_tweet, Tweet}.
-                \t~p ! {subscribe, SubscribeTo}.
-                \t~p ! {search_tweets_by_tag, Tag}.
-                \t~p ! search_tweets_by_mention.
-                \t~p ! search_tweets_by_subscription.
-                \t~p ! help.~n
-            ",[self(),self(),self(),self(),self(),self(),self(),self(),self()])
+            write_help(self())
     end,
     user_node(TableName, HostPid).
 
@@ -217,18 +240,23 @@ start_host() ->
     twitter_host ! awake.
 
 
-start_user(TableName, HostPid) ->
-    Pid = spawn(?MODULE, user_node, [TableName, HostPid]),
-    Pid ! awake,
+write_help(Pid) ->
     io:fwrite("
         Here is a list of commands you can use:~n
         \t~p ! {new_user, UserName, Password}.
         \t~p ! {login, UserName, Password}.
         \t~p ! log_off.
         \t~p ! {make_tweet, Tweet}.
+        \t~p ! {retweet, QueryId}.
         \t~p ! {subscribe, SubscribeTo}.
         \t~p ! {search_tweets_by_tag, Tag}.
         \t~p ! search_tweets_by_mention.
         \t~p ! search_tweets_by_subscription.
         \t~p ! help.~n
-    ",[Pid,Pid,Pid,Pid,Pid,Pid,Pid,Pid,Pid]).
+    ",[Pid,Pid,Pid,Pid,Pid,Pid,Pid,Pid,Pid, Pid]).
+
+
+start_user(TableName, HostPid) ->
+    Pid = spawn(?MODULE, user_node, [TableName, HostPid]),
+    Pid ! awake,
+    write_help(Pid).
