@@ -10,9 +10,9 @@
 % TEST re-tweets
 % TEST query tweets by subscribed list
 
-% TODO update the help message and be a bit more descriptive
 % TODO deliver tweets to user that the user is subscribed to AND that contain mentions of the user
 %% no other tweets should be delivered
+% TODO update the help message and be a bit more descriptive
 % TODO need to report performance of simulation? How?
 
 -module(project4).
