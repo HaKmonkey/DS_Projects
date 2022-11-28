@@ -182,6 +182,7 @@ user_node(TableName, HostPid) ->
             ets:insert_new(TableName, {user_info, UserName, Password});
         log_off ->
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
+            ets:delete(TableName, user_info),
             {twitter_host, HostPid} ! {log_off, UserName};
             %erlang:exit(self(), normal);
         {make_tweet, Tweet} ->
