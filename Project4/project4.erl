@@ -1,17 +1,30 @@
 % TO START HOST
 % erl -name host@127.0.0.1
 % project4:start_host().
-
 % TO START USER
 % erl -name user@127.0.0.2
 % project4:start_user('test','host@127.0.0.1').
 % Then you can proceed to test user commands...
 
-% TEST re-tweets
-% TEST query tweets by subscribed list
+% FOR TESTING LOCALLY
+% erl -sname host
+% project4:start_host().
+%
+%
+% erl -sname user1
+% project4:start_user('test1','host@HaKmonkey-Mac').
+% <0.89.0> ! {new_user, "user1", "test1"}.
+% <0.89.0> ! {subscribe, "user2"}.
+%
+%
+% erl -sname user2
+% project4:start_user('test2','host@HaKmonkey-Mac').
+% <0.89.0> ! {new_user, "user2", "test2"}.
+% <0.89.0> ! {make_tweet, "This is a tweet"}.
 
-% TODO deliver tweets to user that the user is subscribed to AND that contain mentions of the user
-%% no other tweets should be delivered
+
+% TEST query tweets by subscribed list
+% TEST query tweets by mention
 % TODO update the help message and be a bit more descriptive
 % TODO need to report performance of simulation? How?
 
@@ -25,7 +38,6 @@
     user_auth_server/0,
     tweet_log_server/1
 ]).
-%-compile(export_all).
 
 user_auth_server() ->
     receive
@@ -43,26 +55,31 @@ user_auth_server() ->
             ExistingUser = ets:member(twitter_users, UserName),
             if 
                 ExistingUser == false ->
-                    ets:insert_new(twitter_users, {UserName, Password, online}),
+                    ets:insert_new(twitter_users, {UserName, Password, online, From}),
                     From ! {online, UserName, Password};
                 true ->
                     io:fwrite("That user already exists, please choose another~n")
             end;
         {login_request, UserName, Password, From} ->
             ExistingUser = ets:member(twitter_users, UserName),
-            {U, P, _} = ets:match_object(twitter_users, {UserName, Password, offline}),
+            {U, P, _, _} = ets:match_object(twitter_users, {UserName, Password, offline}),
             if 
                 ExistingUser == true ->
                     ets:update_element(twitter_users, UserName, {3, online}), % update user to be online
+                    ets:update_element(twitter_users, UserName, {4, From}),
                     From ! {online, U, P};
                 true ->
                     io:fwrite("Perhaps the username or password was incorrect~n")
             end;
         {log_off, UserName} ->
-            ets:update_element(twitter_users, UserName, {3, offline});
+            ets:update_element(twitter_users, UserName, {3, offline}),
+            ets:update_element(twitter_users, UserName, {4, ""});
         {get_status, UserName, From, Reason, Message} ->
-            [{_, _, Status}] = ets:lookup(twitter_users, UserName),
-            From ! {status, UserName, Status, Reason, Message}
+            [{_, _, Status, _}] = ets:lookup(twitter_users, UserName),
+            From ! {status, UserName, Status, Reason, Message};
+        {post_tweet_to_online_users, Id, UserName, Tweet} ->
+            OnlineUsers = ets:match(twitter_users, {'_', '_', online, '$1'}),
+            [Pid ! {print_tweet, Id, UserName, Tweet} || [Pid] <- OnlineUsers]
     end,
     user_auth_server().
 
@@ -111,14 +128,15 @@ tweet_log_server(Id) ->
                     io:fwrite("Tweet is too long, needs to be =< 140 char~n");
                 true ->
                     ets:insert_new(twitter_tweets, {Id, UserName, Tweet}),
-                    io:fwrite("~p:~n\t~p: ~p~n", [UserName, Id, Tweet])
+                    %io:fwrite("~p:~n\t~p: ~p~n", [UserName, Id, Tweet]),
+                    twitter_host ! {post_tweet_to_online_users, Id, UserName, Tweet}
             end,
             NewId = Id + 1;
         {retweet, UserName, QueryId} ->
             [{_, PostUser, Tweet}] = ets:lookup(twitter_tweets, QueryId),
-            Retweet = "Retweet from " + PostUser + ": " + Tweet,
+            Retweet = "Retweet from @" ++ PostUser ++ ": " ++ Tweet,
             ets:insert_new(twitter_tweets, {Id, UserName, Retweet}),
-            io:fwrite("~p:~n\t~p: ~p~n", [UserName, Id, Retweet]),
+            twitter_host ! {post_tweet_to_online_users, Id, UserName, Retweet},
             NewId = Id + 1;
         {search_tweets, By, From} ->
             FirstKey = ets:first(twitter_tweets),
@@ -161,6 +179,8 @@ host_server(UserServer, TweetServer) ->
             TweetServer ! {search_tweets, Message, From};
         {search_subs, Message, From} ->
             TweetServer ! {search_subs, Message, From};
+        {post_tweet_to_online_users, Id, UserName, Tweet} ->
+            UserServer ! {post_tweet_to_online_users, Id, UserName, Tweet};
         ping ->
             io:fwrite("~p I'm here!~n", [self()])
     end,
@@ -199,7 +219,7 @@ user_node(TableName, HostPid) ->
             {twitter_host, HostPid} ! {get_status, UserName, self(), "Search Tags", Tag};
         search_tweets_by_mention ->
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
-            Mention = "@" + UserName,
+            Mention = "@" ++ UserName,
             {twitter_host, HostPid} ! {get_status, UserName, self(), "Search Mentions", Mention};
         search_tweets_by_subscription -> % not implemented yet...
             [{_, UserName, _}] = ets:lookup(TableName, user_info),
@@ -228,6 +248,19 @@ user_node(TableName, HostPid) ->
             end;
         {print_search_results, MatchList} ->
             io:fwrite("~p~n", [MatchList]);
+        {print_tweet, Id, PostUserName, Tweet} ->
+            [{_, UserName, _}] = ets:lookup(TableName, user_info),
+            Mention = "@" ++ UserName,
+            Tag = string:find(Tweet, Mention),
+            Subscriptions = ets:lookup(TableName, subscribed),
+            SubNames = [Sub || {_, Sub} <- Subscriptions],
+            SubCheck = lists:member(PostUserName, SubNames),
+            if
+                PostUserName == UserName; SubCheck; Tag =/= nomatch ->
+                    io:fwrite("~p:~n\t~p: ~p~n", [PostUserName, Id, Tweet]);
+                true ->
+                    '_'
+            end;
         help ->
             write_help(self())
     end,
@@ -254,7 +287,7 @@ write_help(Pid) ->
         \t~p ! search_tweets_by_mention.
         \t~p ! search_tweets_by_subscription.
         \t~p ! help.~n
-    ",[Pid,Pid,Pid,Pid,Pid,Pid,Pid,Pid,Pid, Pid]).
+    ",[Pid,Pid,Pid,Pid,Pid,Pid,Pid,Pid,Pid,Pid]).
 
 
 start_user(TableName, HostPid) ->
