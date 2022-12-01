@@ -163,7 +163,7 @@ host_server(UserServer, TweetServer) ->
             UserServer ! awake,
             TweetServer ! awake;
         {make_user, UserName, Password, From} ->
-            io:fwrite("Making user: ~p~n", [UserName]),
+            io:fwrite("~p - Making user: ~p~n", [self(), UserName]),
             UserServer ! {request_user, From, UserName, Password, "New User"};
         {login, UserName, Password, From} ->
             UserServer ! {request_user, From, UserName, Password, "Login"};
@@ -190,7 +190,6 @@ host_server(UserServer, TweetServer) ->
 user_node(TableName, HostPid) ->
     receive
         awake ->
-            io:fwrite("This is the Pid for the user node: ~p~n~n", [self()]),
             ets:new(TableName, [set, named_table, private]);
         {new_user, UserName, Password} ->
             Hash = binary:decode_unsigned(crypto:hash(sha256,Password)),
@@ -235,7 +234,7 @@ user_node(TableName, HostPid) ->
                             {twitter_host, HostPid} ! {retweet, UserName, Message};
                         Reason == "Subscribe" ->
                             ets:insert_new(TableName, {subscribed, Message}),
-                            io:fwrite("Subscribed to: ~p~n", [Message]);
+                            io:fwrite("~p - Subscribed to: ~p~n", [self(), Message]);
                         Reason == "Search Tags" ->
                             {twitter_host, HostPid} ! {search_tweets, Message, self()};
                         Reason == "Search Mentions" ->
@@ -257,7 +256,7 @@ user_node(TableName, HostPid) ->
             SubCheck = lists:member(PostUserName, SubNames),
             if
                 PostUserName == UserName; SubCheck; Tag =/= nomatch ->
-                    io:fwrite("~p:~n\t~p: ~p~n", [PostUserName, Id, Tweet]);
+                    io:fwrite("~p - ~p:~n\t~p: ~p~n", [self(), PostUserName, Id, Tweet]);
                 true ->
                     '_'
             end;
@@ -293,4 +292,5 @@ write_help(Pid) ->
 start_user(TableName, HostPid) ->
     Pid = spawn(?MODULE, user_node, [TableName, HostPid]),
     Pid ! awake,
-    write_help(Pid).
+    write_help(Pid),
+    Pid.
