@@ -1,30 +1,7 @@
-% TO START HOST
-% erl -name host@127.0.0.1
-% project4:start_host().
-% TO START USER
-% erl -name user@127.0.0.2
-% project4:start_user('test','host@127.0.0.1').
-% Then you can proceed to test user commands...
-
-% FOR TESTING LOCALLY
-% erl -sname host
-% project4:start_host().
-%
-%
-% erl -sname user1
-% project4:start_user('test1','host@HaKmonkey-Mac').
-% <0.89.0> ! {new_user, "user1", "test1"}.
-% <0.89.0> ! {subscribe, "user2"}.
-%
-%
-% erl -sname user2
-% project4:start_user('test2','host@HaKmonkey-Mac').
-% <0.89.0> ! {new_user, "user2", "test2"}.
-% <0.89.0> ! {make_tweet, "This is a tweet"}.
-
-
 % TEST query tweets by subscribed list
 % TEST query tweets by mention
+% TEST logoff
+% TEST logon
 % TODO update the help message and be a bit more descriptive
 % TODO need to report performance of simulation? How?
 
@@ -62,7 +39,7 @@ user_auth_server() ->
             end;
         {login_request, UserName, Password, From} ->
             ExistingUser = ets:member(twitter_users, UserName),
-            {U, P, _, _} = ets:match_object(twitter_users, {UserName, Password, offline}),
+            [{U, P, _, _}] = ets:match_object(twitter_users, {UserName, Password, offline, none}),
             if 
                 ExistingUser == true ->
                     ets:update_element(twitter_users, UserName, {3, online}), % update user to be online
@@ -73,7 +50,7 @@ user_auth_server() ->
             end;
         {log_off, UserName} ->
             ets:update_element(twitter_users, UserName, {3, offline}),
-            ets:update_element(twitter_users, UserName, {4, ""});
+            ets:update_element(twitter_users, UserName, {4, none});
         {get_status, UserName, From, Reason, Message} ->
             [{_, _, Status, _}] = ets:lookup(twitter_users, UserName),
             From ! {status, UserName, Status, Reason, Message};
@@ -292,5 +269,4 @@ write_help(Pid) ->
 start_user(TableName, HostPid) ->
     Pid = spawn(?MODULE, user_node, [TableName, HostPid]),
     Pid ! awake,
-    write_help(Pid),
     Pid.
