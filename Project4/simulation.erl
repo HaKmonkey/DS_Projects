@@ -1,41 +1,145 @@
 -module(simulation).
 
--export([start/0]).
+-export([start/1]).
 
 
-start() ->
+spawn_user_hosts(0, UserList) ->
+    UserList;
+spawn_user_hosts(NumUsers, UserList) ->
+    {_, UserPid, _} = peer:start(#{name => peer:random_name(), connection => standard_io}),
+    UpdatedUserList = lists:append([UserPid], UserList),
+    spawn_user_hosts(NumUsers-1, UpdatedUserList).
+
+
+gen_rand_string() ->
+    RandString = base64:encode_to_string(crypto:strong_rand_bytes(6)),
+    RandString.
+
+
+rand_table_name() ->
+    RandString = gen_rand_string(),
+    HashString = io_lib:format("~64.16.0b",[binary:decode_unsigned(crypto:hash(sha256, RandString))]),
+    list_to_atom(HashString).
+
+
+random_subset(List, P) ->
+    lists:filter(fun(_) -> rand:uniform() < P end, List).
+
+
+do_subs(Parent, Child, UserName, UserNames) ->
+    Options = lists:delete(UserName, UserNames),
+    Choices = random_subset(Options, 0.33),
+    [peer:send(Parent, Child, {subscribe, Choice}) || Choice <- Choices],
+    Choices.
+
+
+index_of(Item, List) -> index_of(Item, List, 1).
+
+index_of(_, [], _)  -> not_found;
+index_of(Item, [Item|_], Index) -> Index;
+index_of(Item, [_|Tl], Index) -> index_of(Item, Tl, Index+1).
+
+
+zipf_sum(0, ZipfSum) ->
+    ZipfSum;
+zipf_sum(NumUsers, ZipfSum) ->
+    NewZipfSum = ZipfSum + (1/NumUsers),
+    zipf_sum(NumUsers-1, NewZipfSum).
+
+
+zipf_freq(SubFreq, User, ZipfSum) ->
+    UserIndex = index_of(User, SubFreq),
+    ZipfFreq = (1/UserIndex) * ZipfSum,
+    ZipfFreq.
+    
+
+get_tweet_number(Parent, Child, User, Password, TweetNums) ->
+    if 
+        TweetNums == false ->
+            UserData = {Parent, Child, User, Password, 0};
+        true ->
+            {_, TweetNum} = TweetNums,
+            UserData = {Parent, Child, User, Password, TweetNum}
+    end,
+    UserData.
+
+
+make_tweets(0, _, Parent, Child)->
+    io:fwrite("~p~p is done tweeting~n", [Parent, Child]);
+make_tweets(TweetNum, MaxNum, Parent, Child) when TweetNum =< MaxNum/2 ->
+    HT = rand:uniform(10),
+    RT = rand:uniform(3)-1,
+    if
+        HT >= 6 ->
+            peer:send(Parent, Child, {make_tweet, gen_rand_string()}),
+            timer:sleep(200);
+        true ->
+            peer:send(Parent, Child, {retweet, RT}),
+            timer:sleep(200)
+    end;
+make_tweets(TweetNum, MaxNum, Parent, Child) ->
+    peer:send(Parent, Child, {make_tweet, gen_rand_string()}),
+    timer:sleep(200),
+make_tweets(TweetNum-1, MaxNum, Parent, Child).
+
+
+start(NumUsers) ->
+    % starts host
     {_, HostPid, HostName} = peer:start(#{name => host, connection => standard_io}),
-
     peer:call(HostPid, project4, start_host, []),
+    timer:sleep(500),
+
+    UserHostList = spawn_user_hosts(NumUsers, []), % replace the 2 lines below
 
     timer:sleep(500),
 
-    {_, User1Pid, _} = peer:start(#{name => peer:random_name(), connection => standard_io}),
-    {_, User2Pid, _} = peer:start(#{name => peer:random_name(), connection => standard_io}),
+    UserNodes = [{
+        UserPid,
+        peer:call(UserPid, project4, start_user, [rand_table_name(), HostName]),
+        gen_rand_string(),
+        gen_rand_string()
+    } || UserPid <- UserHostList],
+
+    UserNames = [UserName || {_, _, UserName, _} <- UserNodes],
 
     timer:sleep(500),
 
-    User1Node = peer:call(User1Pid, project4, start_user, [test1, HostName]),
-    User2Node = peer:call(User2Pid, project4, start_user, [test2, HostName]),
+    NewUsersFun = fun({Parent, Child, UserName, Password}) ->
+        peer:send(Parent, Child, {new_user, UserName, Password})
+    end,
+
+    lists:map(NewUsersFun, UserNodes),
+    
+    timer:sleep(500),
+
+    AllChoices = lists:append([do_subs(Parent, Child, UserName, UserNames) || {Parent, Child, UserName, _} <- UserNodes]),
+
+    SubFreq = lists:reverse(lists:keysort(2, [{UserName, length([X || X <- AllChoices, X =:= UserName])/NumUsers} || UserName <- lists:uniq(AllChoices)])),
+
+    ZipfSum = zipf_sum(NumUsers, 0),
+
+    TweetFreq = [{User, zipf_freq(SubFreq, {User, F}, ZipfSum)} || {User, F} <- SubFreq],
+
+    BaseTweets = rand:uniform(NumUsers),
+
+    NumTweets = [{User, trunc(math:ceil(Freq*BaseTweets))} || {User, Freq} <- TweetFreq],
+
+
+    UserNodesWithTweets = lists:reverse(lists:keysort(5, [get_tweet_number(Parent, Child, User, Pass, lists:keyfind(User, 1, NumTweets)) || {Parent, Child, User, Pass} <- UserNodes])),
 
     timer:sleep(500),
 
-    peer:send(User1Pid, User1Node, {new_user, "user1", "test1"}),
-    peer:send(User2Pid, User2Node, {new_user, "user2", "test2"}),
+    io:fwrite("~p~n", [UserNodesWithTweets]),
 
     timer:sleep(500),
 
-    peer:send(User1Pid, User1Node, {subscribe, "user2"}),
-
-    peer:send(User2Pid, User2Node, {make_tweet, "This is a tweet"}),
-
-    peer:send(User1Pid, User1Node, {make_tweet, "This is another tweet"}),
-    peer:send(User1Pid, User1Node, {retweet, 0}).
+    [make_tweets(TweetNum, TweetNum, Parent, Child) || {Parent, Child, _, _, TweetNum} <- UserNodesWithTweets],
+    
+    timer:sleep(1500),
 
     % to stop host
-    % peer:stop(User1Pid),
-    % peer:stop(User2Pid),
-    % peer:stop(HostPid).
+    [peer:stop(UserPid) || {UserPid, _, _, _} <- UserNodes],
+    peer:stop(HostPid).
 
 
 
