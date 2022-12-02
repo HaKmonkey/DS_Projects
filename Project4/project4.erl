@@ -64,9 +64,9 @@ user_auth_server() ->
 search_tweets(_, _, Key, MatchList) when Key == '$end_of_table' ->
     MatchList;
 search_tweets(Table, By, Key, MatchList) ->
-    io:fwrite("This is the key: ~p~n", [Key]), 
+    %io:fwrite("This is the key: ~p~n", [Key]), 
     NextKey = ets:next(Table, Key),
-    io:fwrite("This is the nextkey: ~p~n", [NextKey]),
+    %io:fwrite("This is the nextkey: ~p~n", [NextKey]),
     if
         NextKey =/= '$end_of_table' ->
             [{_, _, Tweet}] = ets:lookup(Table, NextKey),
