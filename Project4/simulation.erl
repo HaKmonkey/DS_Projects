@@ -134,23 +134,35 @@ start(NumUsers) ->
     timer:sleep(500),
 
     [make_tweets(TweetNum, TweetNum, Parent, Child) || {Parent, Child, _, _, TweetNum} <- UserNodesWithTweets],
+
+    timer:sleep(500),
+
+    io:fwrite("Mention search time~n"),
+
+    StartTime = erlang:system_time(millisecond),
+
+    [peer:send(Parent, Child, search_tweets_by_mention) || {Parent, Child, _, _, TweetNum} <- UserNodesWithTweets, TweetNum > 0],
+
+    timer:sleep(500),
+
+    EndTime = erlang:system_time(millisecond),
+    io:fwrite("FINISHED mention search in ~pms~n", [EndTime - StartTime]),
+
+    timer:sleep(500),
+
+    io:fwrite("Some users log off~n"),
+
+    [peer:send(Parent, Child, log_off) || {Parent, Child, _, _, TweetNum} <- UserNodesWithTweets, TweetNum == 0],
+
+    timer:sleep(500),
+
+    [make_tweets(TweetNum, TweetNum, Parent, Child) || {Parent, Child, _, _, TweetNum} <- UserNodesWithTweets],
+
+
+
     
     timer:sleep(1500),
 
     % to stop host
     [peer:stop(UserPid) || {UserPid, _, _, _} <- UserNodes],
     peer:stop(HostPid).
-
-
-
-
-% <0.89.0> ! {new_user, UserName, Password}.
-% <0.89.0> ! {login, UserName, Password}.
-% <0.89.0> ! log_off.
-% <0.89.0> ! {make_tweet, Tweet}.
-% <0.89.0> ! {retweet, QueryId}.
-% <0.89.0> ! {subscribe, SubscribeTo}.
-% <0.89.0> ! {search_tweets_by_tag, Tag}.
-% <0.89.0> ! search_tweets_by_mention.
-% <0.89.0> ! search_tweets_by_subscription.
-% <0.89.0> ! help.
