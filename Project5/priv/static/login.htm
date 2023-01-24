@@ -1,0 +1,111 @@
+<html>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="x-ua-compatible" content="ie=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="shortcut icon" type=image/x-icon href=bird_head.ico />
+<link href="synrc.css" type="text/css" rel="stylesheet" />
+<script src="https://code.jquery.com/jquery-3.4.1.js"></script>
+<script src="https://kit.fontawesome.com/a076d05399.js"></script>
+<title>Login</title></head>
+<body class="login">
+<header>
+    <style>
+        .alert {
+            background: #ffdb9b;
+            padding: 20px 40px;
+            min-width: 420px;
+            position: absolute;
+            right: 0px;
+            top: 10px;
+            overflow: hidden;
+            border-radius: 4px;
+            border-left: 4px solid #ffa502;
+        }
+        .alert .fa-exclamation-circle {
+            position: absolute;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #ce8500;
+            font-size: 30px;
+        }
+        .alert .msg {
+            padding: 0 20px;
+            font-size: 18px;
+            color: #ce8500;
+        }
+        .alert .close-btn{
+            position: absolute;
+            right: 0px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #ffd080;
+            padding: 20px 18px;
+            cursor: pointer;
+        }
+        .close-btn:hover {
+            background: #ffc766;
+        }
+        .close-btn .fa-times{
+            color: #ce8500;
+            font-size: 22px;
+            line-height: 40px;
+            transform: translateY(-60%);
+        }
+        .alert.show {
+            animation: show_slide 1s ease forwards;
+        }
+        @keyframes show_slide {
+            0%{
+                transform: translateX(100%);
+            }
+            40% {
+                transform: translateX(-10%);
+            }
+            80% {
+                transform: translateX(0%);
+            }
+            100% {
+                transform: translateX(-10px);
+            }
+        }
+        .alert.hide {
+            display: none;
+        }
+        #loginButton, #newUserButton {
+            display: inline-block;
+        }
+    </style>
+    <a href="/app/index.htm">
+    <img src="bird_head.png" style="margin-bottom:40px;" /></a>
+</header>
+    <div id="warning" class="alert hide">
+        <span class="fas fa-exclamation-circle"></span>
+        <span class="msg">Warning: That user already exists</span>
+        <span class="close-btn">
+            <span id="warn-btn"class="fas fa-times"></span>
+        </span>
+    </div>
+    
+    <form>
+        <p>
+            <label for="user">Username:</label>
+            <input id="user" autofocus="true" />
+            <label for="pass">Password:</label>
+            <input id="pass" />
+            <button id="loginButton">login</button>
+            <button id="newUserButton">new user</button>
+        </p>
+    </form>
+<footer>Jonathan Bravo UFID: 11869914 & Yu Hong UFID: 35156371</footer>
+<script src="https://ws.n2o.dev/priv/utf8.js"></script>
+<script src="https://ws.n2o.dev/priv/bert.js"></script>
+<script src="https://ws.n2o.dev/priv/heart.js"></script>
+<script src="https://ws.n2o.dev/priv/n2o.js"></script>
+<script>host = location.hostname; port = 8001; debug = true;</script>
+<script src="https://ws.n2o.dev/priv/ftp.js"></script>
+<script src="https://nitro.n2o.dev/priv/js/nitro.js"></script>
+<script>protos = [$bert]; N2O_start();</script>
+</body>
+</html>

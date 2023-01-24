@@ -1,0 +1,61 @@
+<html>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="x-ua-compatible" content="ie=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="shortcut icon" type=image/x-icon href=bird_head.ico />
+<link href="synrc.css" type="text/css" rel="stylesheet" />
+<title id="home_title">Home</title>
+<style>
+    #message {
+        width: 70% !important
+    }
+    #tweet_id, #sub_text, #tags {
+        width: 65% !important
+    }
+
+    #send, #re_tweet, #subscribe, #tag_btn {
+        float: right;
+    }
+</style>
+</head>
+<body class="chat">
+<header>
+    <img src="bird_head.png" style="margin-bottom:40px;" />
+    <h2 id="heading">room</h2>
+    <button id="logout">logout</button>
+    <button id="mentions">Search Mentions</button>
+    <button id="subs">Search Subs</button>
+</header>
+<main>
+    <form></form>
+    <textarea id="message" rows="2" autofocus="true" placeholder="What's happening?"></textarea> 
+    <button id="send">Tweet</button>
+
+    </br>
+
+    <textarea id="tweet_id" autofocus="true" placeholder="Tweet Id"></textarea>
+    <button id="re_tweet">Re-Tweet</button>
+
+    <textarea id="sub_text" autofocus="true" placeholder="User"></textarea>
+    <button id="subscribe">Subscribe</button>
+
+    <!-- Search by mention will just be a button -->
+
+    <textarea id="tags" autofocus="true" placeholder="#Tag"></textarea>
+    <button id="tag_btn">Search Tags</button>
+
+    <history id="history"></history> <!-- This is where the twitter messages are shown -->
+</main>
+<script src="https://ws.n2o.dev/priv/utf8.js"></script>
+<script src="https://ws.n2o.dev/priv/bert.js"></script>
+<script src="https://ws.n2o.dev/priv/heart.js"></script>
+<script src="https://ws.n2o.dev/priv/ieee754.js"></script>
+<script src="https://ws.n2o.dev/priv/n2o.js"></script>
+<script>host = location.hostname; port = 8001; debug = true;</script>
+<script src="https://ws.n2o.dev/priv/ftp.js"></script>
+<script src="https://nitro.n2o.dev/priv/js/nitro.js"></script>
+<script>$io.do = function(r) { console.log(r); };</script>
+<script>protos = [$bert]; N2O_start();</script>
+</body>
+</html>
